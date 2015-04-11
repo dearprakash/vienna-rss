@@ -1,15 +1,25 @@
-Vienna
-======
+![Vienna](http://vienna-rss.sourceforge.net/img/vienna_logo.png)
+
+[![Build Status](https://travis-ci.org/ViennaRSS/vienna-rss.svg?branch=master)](https://travis-ci.org/ViennaRSS/vienna-rss) [![Stories in Ready](https://badge.waffle.io/viennarss/vienna-rss.png?label=ready&title=Ready)](https://waffle.io/viennarss/vienna-rss)
 
 [Vienna](http://www.vienna-rss.org) is an RSS/Atom reader for Mac OS X.
 
 Vienna can connect directly to the websites you want to track.
-Additionally or alternatively, you can also sync with a server supporting the [Open Reader API](http://rss-sync.github.io/Open-Reader-API/rssconsensus/) (an adaptation of the now deceased Google Reader API). Vienna has been successfully tested with BazQux.com and FeedHQ.org.
+Additionally or alternatively, you can also sync with a server supporting the [Open Reader API](http://rss-sync.github.io/Open-Reader-API/rssconsensus/) (an adaptation of the now deceased Google Reader API). Vienna has been successfully tested with BazQux.com, FeedHQ.org, InoReader.com and TheOldReader.com.
 
-Downloading binaries
---------------------
+Installing
+----------
 
-Admins upload release and test versions at [Sourceforge](https://sourceforge.net/projects/vienna-rss/files/).
+Admins upload release and test versions at [Sourceforge](https://sourceforge.net/projects/vienna-rss/files/).  
+Alternatively, you can download releases from the [GitHub Releases page](https://github.com/ViennaRSS/vienna-rss/releases)
+
+**Homebrew**
+
+Vienna is also available as a Cask for [Homebrew Cask](https://github.com/phinze/homebrew-cask).
+
+    brew cask install vienna
+
+
 
 Getting support
 ---------------
@@ -51,9 +61,6 @@ We need help keeping Vienna translations up to date into different languages. Ap
 
 Have a look at current localizations in their respective _.lproj_ folders. While translating, the [LangSwitch](http://www.seoxys.com/langswitch-2/) freeware might be handy for checking contexts.
 
-Note : Unless you are able to run Interface Builder version 3.x, don't change InfoWindow.nib. This would break our efforts to maintain Leopard (OS X 10.5) compatibility.
-Instead, just change the InfoWindow.strings file. Your changes will be integrated manually, using either Interface Builder 3.2 or ibtool3 (legacy command line tool included in Xcode 4.x).
-
 ### Writing custom styles
 
 Vienna supports a variety of different display styles for articles. These styles are provided on the Styles sub-menu off the View menu. A style is a combination of an HTML template that is used to control the placement of various parts of the article and a CSS stylesheet that controls the appearance of the article.
@@ -67,6 +74,8 @@ Vienna supports plugins which are installed in menus and/or on the toolbar and c
 You can write plugins by referring to [this document](http://www.vienna-rss.org/?page_id=120). Have a look at existing plugins in the __Plugins__ folder.
 
 ### Writing code
+
+Vienna uses [cocoapods](http://cocoapods.org) for managing dependancies. When building, make sure to always open the Xcode workspace `Viennna.xcworkspace` instead of a project file.
 
 You should have a basic knowledge of Git and read these [advices on workflow](https://github.com/ViennaRSS/vienna-rss/wiki/Good-manners-with-Git).
 

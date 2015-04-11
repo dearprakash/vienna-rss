@@ -113,7 +113,7 @@
  */
 -(NSImage *)auxiliaryImage
 {
-	return auxiliaryImage;
+	return [[auxiliaryImage retain] autorelease];;
 }
 
 /* setCount
@@ -178,25 +178,10 @@
 		}
 		imageFrame.origin.x += 3;
 		imageFrame.size = imageSize;
+		// vertically center
+		imageFrame.origin.y += (cellFrame->size.height - imageSize.height) / 2.0;
 		
-		// The following stuff is equivalent to Snow Leopard's instance method
-		// drawInRect: fromRect: operation: fraction: respectFlipped:YES hints:NULL
-		// but it is Leopard compatible. Adapted from Chromium's image_utils.mm
-		NSAffineTransform *transform = nil;
-		if ([[NSGraphicsContext currentContext] isFlipped]) {
-			transform = [NSAffineTransform transform];
-			[transform scaleXBy:1.0 yBy:-1.0];
-			[transform concat];
-
-			// The lower edge of the image is as far from the origin as the
-			// upper edge was, plus it's on the other side of the origin.
-			imageFrame.origin.y -= NSMaxY(imageFrame) + NSMinY(imageFrame);
-  		}
-		
-		[image drawInRect:imageFrame fromRect:NSZeroRect operation:NSCompositeSourceOver fraction:1.0f];
-
-		// Flip drawing back, if needed.
-		[transform concat];
+		[image drawInRect:imageFrame fromRect:NSZeroRect operation:NSCompositeSourceOver fraction:1.0f respectFlipped:YES hints:NULL];
 
 	}
 }
@@ -220,12 +205,13 @@
 
 		progressIndicatorFrame.size = NSMakeSize(PROGRESS_INDICATOR_DIMENSION, PROGRESS_INDICATOR_DIMENSION);
 		progressIndicatorFrame.origin.x += PROGRESS_INDICATOR_LEFT_MARGIN;
-
-		if ([progressIndicator superview] != controlView)
-			[controlView addSubview:progressIndicator];
+		progressIndicatorFrame.origin.y += (cellFrame.size.height - PROGRESS_INDICATOR_DIMENSION) / 2.0;
 
 		if (!NSEqualRects([progressIndicator frame], progressIndicatorFrame)) {
 			[progressIndicator setFrame:progressIndicatorFrame];
+
+		if ([progressIndicator superview] != controlView)
+			[controlView addSubview:progressIndicator];
 		}
 	}
 	else
@@ -253,25 +239,10 @@
 			NSRectFill(imageFrame);
 		}
 		imageFrame.size = imageSize;
+		// vertically center
+		imageFrame.origin.y += (cellFrame.size.height - imageSize.height) / 2.0;
 		
-		// The following stuff is equivalent to Snow Leopard's instance method
-		// drawInRect: fromRect: operation: fraction: respectFlipped:YES hints:NULL
-		// but it is Leopard compatible. Adapted from Chromium's image_utils.mm
-		NSAffineTransform *transform = nil;
-		if ([[NSGraphicsContext currentContext] isFlipped]) {
-			transform = [NSAffineTransform transform];
-			[transform scaleXBy:1.0 yBy:-1.0];
-			[transform concat];
-
-			// The lower edge of the image is as far from the origin as the
-			// upper edge was, plus it's on the other side of the origin.
-			imageFrame.origin.y -= NSMaxY(imageFrame) + NSMinY(imageFrame);
-  		}
-		
-		[auxiliaryImage drawInRect:imageFrame fromRect:NSZeroRect operation:NSCompositeSourceOver fraction:1.0f];
-
-		// Flip drawing back, if needed.
-		[transform concat];
+		[auxiliaryImage drawInRect:imageFrame fromRect:NSZeroRect operation:NSCompositeSourceOver fraction:1.0f respectFlipped:YES hints:NULL];
 
 	}
 	
@@ -324,13 +295,12 @@
 
 /* selectWithFrame
  * Draws the selection around the cell. We overload this to handle our custom field editor
- * frame in the FolderView class.
+ * frame in the FolderView class, and to keep the image visible
  */
 -(void)selectWithFrame:(NSRect)aRect inView:(NSView *)controlView editor:(NSText *)textObj delegate:(id)anObject start:(NSInteger)selStart length:(NSInteger)selLength
 {
 	if ([controlView isKindOfClass:[FolderView class]])
 	{
-		aRect.size = [self cellSize];
 		if (image != nil)
 			aRect.origin.x += [image size].width + 3;
 		++aRect.origin.y;
@@ -339,15 +309,45 @@
 	[super selectWithFrame:aRect inView:controlView editor:textObj delegate:anObject start:selStart length:selLength];
 }
 
+-(NSArray*)accessibilityAttributeNames
+{
+    static NSArray * attributes = nil;
+    if (!attributes)
+    {
+        NSSet * set = [NSSet setWithArray:[super accessibilityAttributeNames]];
+        attributes = [[[set setByAddingObject:NSAccessibilityDescriptionAttribute] allObjects] retain];
+    }
+    return attributes;
+}
+
+-(id)accessibilityAttributeValue:(NSString *)attribute
+{
+    if ([attribute isEqualToString:NSAccessibilityDescriptionAttribute])
+    {
+        NSMutableArray * bits = [NSMutableArray arrayWithCapacity:3];
+        if (auxiliaryImage && auxiliaryImage.accessibilityDescription)
+            [bits addObject:auxiliaryImage.accessibilityDescription];
+        if (hasCount)
+            [bits addObject:[NSString stringWithFormat:NSLocalizedString(@"%d unread articles", nil), count]];
+        if (inProgress)
+            [bits addObject:NSLocalizedString(@"Loading", nil)];
+        if (bits.count)
+            return [bits componentsJoinedByString:@", "];
+    }
+    return [super accessibilityAttributeValue:attribute];
+}
+
 /* dealloc
  * Delete our resources.
  */
 -(void)dealloc
 {
 	[countBackgroundColour release];
+	countBackgroundColour=nil;
 	[auxiliaryImage release];
+	auxiliaryImage=nil;
 	[image release];
-	
+	image=nil;
 	[super dealloc];
 }
 

@@ -42,6 +42,7 @@
 	BOOL hasPrefs;
 	BOOL showFolderImages;
 	BOOL useJavaScript;
+    BOOL useWebPlugins;
 	BOOL showAppInStatusBar;
 	BOOL showStatusBar;
 	BOOL showFilterBar;
@@ -49,8 +50,10 @@
     BOOL syncGoogleReader;
     BOOL prefersGoogleNewSubscription;
     BOOL markUpdatedAsNew;
+    BOOL sendSystemSpecs;
 	NSString * downloadFolder;
 	NSString * displayStyle;
+	float textSizeMultiplier;
 	NSString * defaultDatabase;
 	NSString * imagesFolder;
 	NSString * scriptsFolder;
@@ -65,6 +68,11 @@
 	NSString * syncServer;
 	NSString * syncingUser;
 }
+
+// String constants for NSNotificationCenter
+extern NSString * const kMA_Notify_MinimumFontSizeChange;
+extern NSString * const kMA_Notify_UseJavaScriptChange;
+extern NSString * const kMA_Notify_UseWebPluginsChange;
 
 // Accessor functions
 +(Preferences *)standardPreferences;
@@ -155,6 +163,10 @@
 -(BOOL)useJavaScript;
 -(void)setUseJavaScript:(BOOL)flag;
 
+// Web Plugins settings
+-(BOOL)useWebPlugins;
+-(void)setUseWebPlugins:(BOOL)flag;
+
 // Refresh frequency
 -(void)setRefreshFrequency:(int)newFrequency;
 -(int)refreshFrequency;
@@ -163,6 +175,8 @@
 -(NSString *)displayStyle;
 -(void)setDisplayStyle:(NSString *)newStyle;
 -(void)setDisplayStyle:(NSString *)newStyle withNotification:(BOOL)flag;
+-(float)textSizeMultiplier;
+-(void)setTextSizeMultiplier:(float)newValue;
 
 // Folder list font
 -(NSString *)folderListFont;
@@ -215,6 +229,10 @@
 // Do we show updated articles as new ?
 -(BOOL)markUpdatedAsNew;
 -(void)setMarkUpdatedAsNew:(BOOL)flag;
+
+// Do we send system specs when checking for updates?
+-(BOOL)sendSystemSpecs;
+-(void)setSendSystemSpecs:(BOOL)flag;
 
 #pragma mark -
 #pragma mark Open Reader syncing

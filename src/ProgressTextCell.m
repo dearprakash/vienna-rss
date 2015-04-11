@@ -97,9 +97,6 @@
 				[progressIndicator setStyle:NSProgressIndicatorSpinningStyle];
 				[progressIndicator setDisplayedWhenStopped:YES];
 				[progressIndicator setUsesThreadedAnimation:YES];
-				
-				// Start the animation.
-				[progressIndicator startAnimation:self];
 			}
 			
 			// Recompute the new cell frame taking out space on the right for the
@@ -108,12 +105,13 @@
 			NSInteger cellHeight = cellFrame.size.height;
 			NSInteger progressIndicatorSize = cellHeight < PROGRESS_INDICATOR_DIMENSION ? cellHeight : PROGRESS_INDICATOR_DIMENSION;
 			NSInteger progressOffset = (cellHeight - progressIndicatorSize) / 2;
-			NSInteger progressWidth = progressIndicatorSize + PROGRESS_INDICATOR_LEFT_MARGIN + progressOffset;
+			NSInteger progressWidth = progressIndicatorSize + PROGRESS_INDICATOR_LEFT_MARGIN ;
 			NSDivideRect(cellFrame, &progressIndicatorFrame, &cellFrame, progressWidth, NSMaxXEdge);
 
 			// Set the size for the progress indicator frame and add the margin.
 			progressIndicatorFrame.size = NSMakeSize(progressIndicatorSize, progressIndicatorSize);
 			progressIndicatorFrame.origin.x += PROGRESS_INDICATOR_LEFT_MARGIN;
+			// vertically center
 			progressIndicatorFrame.origin.y += progressOffset;
 
 			// Add the progress indicator as a subview of the controlView if 
@@ -144,6 +142,11 @@
 	cellFrame.origin.x += 2;
 	cellFrame.size.height -= 1;
 	[super drawInteriorWithFrame:cellFrame inView:controlView];
+
+	// Now that everything is set, start the animation if necessary
+	if (currentRow == progressRow && inProgress) {
+		[progressIndicator startAnimation:self];
+	}
 }
 
 @end

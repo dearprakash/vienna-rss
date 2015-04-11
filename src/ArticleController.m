@@ -115,7 +115,7 @@
 		[self setSortColumnIdentifier:[prefs stringForKey:MAPref_SortColumn]];
 		
 		// Create a backtrack array
-		[self setBacktrackArray:[[[BackTrackArray alloc] initWithMaximum:[prefs backTrackQueueSize]] autorelease]];
+		backtrackArray = [[BackTrackArray alloc] initWithMaximum:[prefs backTrackQueueSize]];
 		
 		// Register for notifications
 		NSNotificationCenter * nc = [NSNotificationCenter defaultCenter];
@@ -194,7 +194,7 @@
 	if (currentFolderId == -1)
 		return @"";
 
-	Folder * folder = [[Database sharedDatabase] folderFromID:currentFolderId];
+	Folder * folder = [[Database sharedManager] folderFromID:currentFolderId];
 	return [NSString stringWithFormat:NSLocalizedString(@"Search in %@", nil), [folder name]];
 }
 
@@ -317,8 +317,10 @@
 {
 	if (currentFolderId != newFolderId && newFolderId != 0)
 	{
-		[[[Database sharedDatabase] folderFromID:currentFolderId] clearCache];
+		[[[Database sharedManager] folderFromID:currentFolderId] clearCache];
 		currentFolderId = newFolderId;
+		[self reloadArrayOfArticles];
+		[self sortArticles];
 		[mainArticleView selectFolderWithFilter:newFolderId];		
 	}
 }
@@ -330,8 +332,8 @@
 -(void)reloadArrayOfArticles
 {
 	
-	Folder * folder = [[Database sharedDatabase] folderFromID:currentFolderId];
-	[self setFolderArrayOfArticles:[folder articlesWithFilter:[[NSApp delegate] filterString]]];
+	Folder * folder = [[Database sharedManager] folderFromID:currentFolderId];
+	[self setFolderArrayOfArticles:[folder articlesWithFilter:[APPCONTROLLER filterString]]];
 	
 	[self refilterArrayOfArticles];
 }
@@ -372,7 +374,7 @@
 	if (![guidOfArticleToPreserve isEqualToString:@""])
 	{
 		Article * articleToAdd = nil;
-		Folder * folder = [[Database sharedDatabase] folderFromID:folderIdOfArticleToPreserve];
+		Folder * folder = [[Database sharedManager] folderFromID:folderIdOfArticleToPreserve];
 		if (folder != nil)
 		{
 			[folder clearCache];
@@ -417,28 +419,31 @@
 	[undoManager setActionName:NSLocalizedString(@"Delete", nil)];
 	
 	// We will make a new copy of currentArrayOfArticles and folderArrayOfArticles with the selected articles removed.
-	NSMutableArray * currentArrayCopy = [[NSMutableArray alloc] initWithArray:currentArrayOfArticles];
-	NSMutableArray * folderArrayCopy = [[NSMutableArray alloc] initWithArray:folderArrayOfArticles];
-	BOOL needFolderRedraw = NO;
-	BOOL needReload = NO;
+	NSMutableArray * currentArrayCopy = [NSMutableArray arrayWithArray:currentArrayOfArticles];
+	NSMutableArray * folderArrayCopy = [NSMutableArray arrayWithArray:folderArrayOfArticles];
+	__block BOOL needFolderRedraw = NO;
+	__block BOOL needReload = NO;
 	
 	// Iterate over every selected article in the table and set the deleted
 	// flag on the article while simultaneously removing it from our copies
-	Database * db = [Database sharedDatabase];
-	[db beginTransaction];
 	for (Article * theArticle in articleArray)
 	{
-		if (![theArticle isRead])
+		NSInteger folderId = [theArticle folderId];
+		if (![theArticle isRead]) {
 			needFolderRedraw = YES;
-		[db markArticleDeleted:[theArticle folderId] guid:[theArticle guid] isDeleted:deleteFlag];
+			if (deleteFlag && IsGoogleReaderFolder([[Database sharedManager] folderFromID:folderId])) {
+				[[GoogleReader sharedManager] markRead:[theArticle guid] readFlag:YES];
+			}
+		}
+		[[Database sharedManager] markArticleDeleted:folderId guid:[theArticle guid] isDeleted:deleteFlag];
 		if (![currentArrayOfArticles containsObject:theArticle])
 			needReload = YES;
-		else if (deleteFlag && (currentFolderId != [db trashFolderId]))
+		else if (deleteFlag && (currentFolderId != [[Database sharedManager] trashFolderId]))
 		{
 			[currentArrayCopy removeObject:theArticle];
 			[folderArrayCopy removeObject:theArticle];
 		}
-		else if (!deleteFlag && (currentFolderId == [db trashFolderId]))
+		else if (!deleteFlag && (currentFolderId == [[Database sharedManager] trashFolderId]))
 		{
 			[currentArrayCopy removeObject:theArticle];
 			[folderArrayCopy removeObject:theArticle];
@@ -446,11 +451,9 @@
 		else
 			needReload = YES;
 	}
-	[db commitTransaction];
+
 	[self setCurrentArrayOfArticles:currentArrayCopy];
-	[currentArrayCopy release];
 	[self setFolderArrayOfArticles:folderArrayCopy];
-	[folderArrayCopy release];
 	if (needReload)
 		[mainArticleView refreshFolder:MA_Refresh_ReloadFromDatabase];
 	else
@@ -467,7 +470,7 @@
 	if (needFolderRedraw)
 	{
 		[foldersTree updateFolder:currentFolderId recurseToParents:YES];
-		[[NSApp delegate] showUnreadCountOnApplicationIconAndWindowTitle];
+		[APPCONTROLLER showUnreadCountOnApplicationIconAndWindowTitle];
 	}
 }
 
@@ -477,46 +480,46 @@
 -(void)deleteArticlesByArray:(NSArray *)articleArray
 {		
 	// Make a new copy of currentArrayOfArticles and folderArrayOfArticles with the selected article removed.
-	NSMutableArray * currentArrayCopy = [[NSMutableArray alloc] initWithArray:currentArrayOfArticles];
-	NSMutableArray * folderArrayCopy = [[NSMutableArray alloc] initWithArray:folderArrayOfArticles];
-	BOOL needFolderRedraw = NO;
+	NSMutableArray * currentArrayCopy = [NSMutableArray arrayWithArray:currentArrayOfArticles];
+	NSMutableArray * folderArrayCopy = [NSMutableArray arrayWithArray:folderArrayOfArticles];
+	__block BOOL needFolderRedraw = NO;
 	
 	// Iterate over every selected article in the table and remove it from
 	// the database.
-	Database * db = [Database sharedDatabase];
-
-	[db beginTransaction];
 	for (Article * theArticle in articleArray)	
 	{
-		if (![theArticle isRead])
+		NSInteger folderId = [theArticle folderId];
+		if (![theArticle isRead]) {
 			needFolderRedraw = YES;
-		if ([db deleteArticle:[theArticle folderId] guid:[theArticle guid]])
+			if (IsGoogleReaderFolder([[Database sharedManager] folderFromID:folderId])) {
+				[[GoogleReader sharedManager] markRead:[theArticle guid] readFlag:YES];
+			}
+		}
+		if ([[Database sharedManager] deleteArticleFromFolder:folderId guid:[theArticle guid]])
 		{
 			[currentArrayCopy removeObject:theArticle];
 			[folderArrayCopy removeObject:theArticle];
 		}
 	}
-	[db commitTransaction];
 	[self setCurrentArrayOfArticles:currentArrayCopy];
-	[currentArrayCopy release];
 	[self setFolderArrayOfArticles:folderArrayCopy];
-	[folderArrayCopy release];
 	[mainArticleView refreshFolder:MA_Refresh_RedrawList];
 
 	// If any of the articles we deleted were unread then the
 	// folder's unread count just changed.
-	if (needFolderRedraw)
+    if (needFolderRedraw) {
 		[foldersTree updateFolder:currentFolderId recurseToParents:YES];
-
+    }
 	// Ensure there's a valid selection
-	if ([currentArrayOfArticles count] > 0u)
+    if ([currentArrayOfArticles count] > 0u) {
 		[mainArticleView ensureSelectedArticle:YES];
-	else
+    } else {
 		[[NSApp mainWindow] makeFirstResponder:[foldersTree mainView]];
-	
+    }
 	// Read and/or unread count may have changed
-	if (needFolderRedraw)
-		[[NSApp delegate] showUnreadCountOnApplicationIconAndWindowTitle];
+    if (needFolderRedraw) {
+		[APPCONTROLLER showUnreadCountOnApplicationIconAndWindowTitle];
+    }
 }
 
 /* markUnflagUndo
@@ -539,26 +542,25 @@
  * Mark the specified articles in articleArray as flagged.
  */
 -(void)markFlaggedByArray:(NSArray *)articleArray flagged:(BOOL)flagged
-{
-	Database * db = [Database sharedDatabase];
-	
+{	
 	// Set up to undo this action
 	NSUndoManager * undoManager = [[NSApp mainWindow] undoManager];
 	SEL markFlagUndoAction = flagged ? @selector(markUnflagUndo:) : @selector(markFlagUndo:);
 	[undoManager registerUndoWithTarget:self selector:markFlagUndoAction object:articleArray];
 	[undoManager setActionName:NSLocalizedString(@"Flag", nil)];
 
-	[db beginTransaction];
 	for (Article * theArticle in articleArray)
 	{
-		Folder *myFolder = [db folderFromID:[theArticle folderId]];
+		Folder *myFolder = [[Database sharedManager] folderFromID:[theArticle folderId]];
 		if (IsGoogleReaderFolder(myFolder)) {
 			[[GoogleReader sharedManager] markStarred:[theArticle guid] starredFlag:flagged];
 		}
-		[db markArticleFlagged:[theArticle folderId] guid:[theArticle guid] isFlagged:flagged];
+		[[Database sharedManager] markArticleFlagged:[theArticle folderId]
+                                                guid:[theArticle guid]
+                                           isFlagged:flagged];
         [theArticle markFlagged:flagged];
 	}
-	[db commitTransaction];
+
 	[mainArticleView refreshFolder:MA_Refresh_RedrawList];
 }
 
@@ -589,19 +591,13 @@
 	[undoManager registerUndoWithTarget:self selector:markReadUndoAction object:articleArray];
 	[undoManager setActionName:NSLocalizedString(@"Mark Read", nil)];
 
-	Database * db = [Database sharedDatabase];
-	BOOL singleArticle = [articleArray count] < 2;
-	
-	if (!singleArticle)
-		[db beginTransaction];
-	[self innerMarkReadByArray:articleArray readFlag:readFlag];
-	if (!singleArticle)
-		[db commitTransaction];
+    [self innerMarkReadByArray:articleArray readFlag:readFlag];
+
 	[mainArticleView refreshFolder:MA_Refresh_RedrawList];
 	
 	// The info bar has a count of unread articles so we need to
 	// update that.
-	[[NSApp delegate] showUnreadCountOnApplicationIconAndWindowTitle];
+	[APPCONTROLLER showUnreadCountOnApplicationIconAndWindowTitle];
 }
 
 /* innerMarkReadByArray
@@ -609,18 +605,41 @@
  */
 -(void)innerMarkReadByArray:(NSArray *)articleArray readFlag:(BOOL)readFlag
 {
-	Database * db = [Database sharedDatabase];
 	NSInteger lastFolderId = -1;
 	
 	for (Article * theArticle in articleArray)
 	{
 		NSInteger folderId = [theArticle folderId];
-		if (IsGoogleReaderFolder([db folderFromID:folderId]) && ([theArticle isRead] != readFlag)) {
+		if (IsGoogleReaderFolder([[Database sharedManager] folderFromID:folderId]) && ([theArticle isRead] != readFlag)) {
 			[[GoogleReader sharedManager] markRead:[theArticle guid] readFlag:readFlag];
 		}
 		//FIX: article status should be "settato" from httprequest success block
-		[db markArticleRead:folderId guid:[theArticle guid] isRead:readFlag];
+		[[Database sharedManager] markArticleRead:folderId guid:[theArticle guid] isRead:readFlag];
 		[theArticle markRead:readFlag];
+		if (folderId != lastFolderId && lastFolderId != -1)
+			[foldersTree updateFolder:lastFolderId recurseToParents:YES];
+		lastFolderId = folderId;
+	}
+	if (lastFolderId != -1)
+		[foldersTree updateFolder:lastFolderId recurseToParents:YES];
+}
+
+/* innerMarkReadByRefsArray
+ * Marks all articles in the specified references array read or unread.
+ */
+-(void)innerMarkReadByRefsArray:(NSArray *)articleArray readFlag:(BOOL)readFlag
+{
+	Database * db = [Database sharedManager];
+	NSInteger lastFolderId = -1;
+
+	for (ArticleReference * articleRef in articleArray)
+	{
+		NSInteger folderId = [articleRef folderId];
+		if (IsGoogleReaderFolder([db folderFromID:folderId])){
+			[[GoogleReader sharedManager] markRead:[articleRef guid] readFlag:readFlag];
+		}
+		//FIX: article status should be "settato" from httprequest success block
+		[db markArticleRead:folderId guid:[articleRef guid] isRead:readFlag];
 		if (folderId != lastFolderId && lastFolderId != -1)
 			[foldersTree updateFolder:lastFolderId recurseToParents:YES];
 		lastFolderId = folderId;
@@ -651,12 +670,7 @@
  */
 -(void)markAllReadByArray:(NSArray *)folderArray withUndo:(BOOL)undoFlag withRefresh:(BOOL)refreshFlag
 {
-	Database * db = [Database sharedDatabase];
-	NSArray * refArray = nil;
-
-	[db beginTransaction];
-	refArray = [self wrappedMarkAllReadInArray:folderArray withUndo:undoFlag];
-	[db commitTransaction];
+	NSArray * refArray = [self wrappedMarkAllReadInArray:folderArray withUndo:undoFlag];
 	if (refArray != nil && [refArray count] > 0)
 	{
 		NSUndoManager * undoManager = [[NSApp mainWindow] undoManager];
@@ -664,18 +678,14 @@
 		[undoManager setActionName:NSLocalizedString(@"Mark All Read", nil)];
 	}
 
-	for (Article * theArticle in folderArrayOfArticles)
-	{
-		if (IsGoogleReaderFolder([db folderFromID:[theArticle folderId]]) && ![theArticle isRead]) {
-			[[GoogleReader sharedManager] markRead:[theArticle guid] readFlag:YES];
-		}
+    for (Article * theArticle in folderArrayOfArticles) {
 		[theArticle markRead:YES];
+    }
 
-	}
-    
-	if (refreshFlag)
+    if (refreshFlag) {
 		[mainArticleView refreshFolder:MA_Refresh_RedrawList];
-	[[NSApp delegate] showUnreadCountOnApplicationIconAndWindowTitle];
+    }
+	[APPCONTROLLER showUnreadCountOnApplicationIconAndWindowTitle];
 }
 
 /* wrappedMarkAllReadInArray
@@ -685,20 +695,20 @@
 -(NSArray *)wrappedMarkAllReadInArray:(NSArray *)folderArray withUndo:(BOOL)undoFlag
 {
 	NSMutableArray * refArray = [NSMutableArray array];
-	Database * db = [Database sharedDatabase];
 	
 	for (Folder * folder in folderArray)
 	{
 		int folderId = [folder itemId];
 		if (IsGroupFolder(folder) && undoFlag)
 		{
-			[refArray addObjectsFromArray:[self wrappedMarkAllReadInArray:[db arrayOfFolders:folderId] withUndo:undoFlag]];
+			[refArray addObjectsFromArray:[self wrappedMarkAllReadInArray:[[Database sharedManager] arrayOfFolders:folderId] withUndo:undoFlag]];
 		}
 		else if (IsRSSFolder(folder))
 		{
-			if (undoFlag)
-				[refArray addObjectsFromArray:[db arrayOfUnreadArticles:folderId]];
-			if ([db markFolderRead:folderId])
+            if (undoFlag) {
+				[refArray addObjectsFromArray:[[Database sharedManager] arrayOfUnreadArticlesRefs:folderId]];
+            }
+			if ([[Database sharedManager] markFolderRead:folderId])
 			{
 				[foldersTree updateFolder:folderId recurseToParents:YES];
                 
@@ -706,9 +716,11 @@
 		}
 		else if (IsGoogleReaderFolder(folder))
 		{
-			if (undoFlag)
-				[refArray addObjectsFromArray:currentArrayOfArticles];
-			[self innerMarkReadByArray:currentArrayOfArticles readFlag:YES];
+			NSArray * articleArray = [[Database sharedManager] arrayOfUnreadArticlesRefs:folderId];
+            if (undoFlag) {
+				[refArray addObjectsFromArray:articleArray];
+            }
+			[self innerMarkReadByRefsArray:articleArray readFlag:YES];
 		}
 		else
 		{
@@ -748,9 +760,9 @@
  */
 -(void)markAllReadByReferencesArray:(NSArray *)refArray readFlag:(BOOL)readFlag
 {
-	Database * db = [Database sharedDatabase];
-	int lastFolderId = -1;
-	BOOL needRefilter = NO;
+	Database * dbManager = [Database sharedManager];
+	__block int lastFolderId = -1;
+	__block BOOL needRefilter = NO;
 	
 	// Set up to undo or redo this action
 	NSUndoManager * undoManager = [[NSApp mainWindow] undoManager];
@@ -758,39 +770,43 @@
 	[undoManager registerUndoWithTarget:self selector:markAllReadUndoAction object:refArray];
 	[undoManager setActionName:NSLocalizedString(@"Mark All Read", nil)];
 	
-	[db beginTransaction];
 	for (ArticleReference *ref in refArray)
 	{
 		int folderId = [ref folderId];
 		NSString * theGuid = [ref guid];
-		if (IsGoogleReaderFolder([db folderFromID:folderId]))
+        if (IsGoogleReaderFolder([dbManager folderFromID:folderId])) {
 			[[GoogleReader sharedManager] markRead:theGuid readFlag:readFlag];
+        }
 
-		[db markArticleRead:folderId guid:theGuid isRead:readFlag];
+		[dbManager markArticleRead:folderId guid:theGuid isRead:readFlag];
 		if (folderId != lastFolderId && lastFolderId != -1)
 		{
 			[foldersTree updateFolder:lastFolderId recurseToParents:YES];
-			if (lastFolderId == currentFolderId)
+            if (lastFolderId == currentFolderId) {
 				needRefilter = YES;
+            }
 		}
 		lastFolderId = folderId;
 	}
-	[db commitTransaction];
 	
 	if (lastFolderId != -1)
 	{
 		[foldersTree updateFolder:lastFolderId recurseToParents:YES];
-		if (lastFolderId == currentFolderId)
+        if (lastFolderId == currentFolderId) {
 			needRefilter = YES;
-        if (!IsRSSFolder([db folderFromID:currentFolderId])&&!IsGoogleReaderFolder([db folderFromID:currentFolderId]))
+        }
+        if (!IsRSSFolder([dbManager folderFromID:currentFolderId]) &&
+            !IsGoogleReaderFolder([dbManager folderFromID:currentFolderId])) {
             [mainArticleView refreshFolder:MA_Refresh_ReloadFromDatabase];
-        else if (needRefilter)
+        }
+        else if (needRefilter) {
             [mainArticleView refreshFolder:MA_Refresh_ReapplyFilter];
+        }
 	}
 	
 	// The info bar has a count of unread articles so we need to
 	// update that.
-	[[NSApp delegate] showUnreadCountOnApplicationIconAndWindowTitle];
+	[APPCONTROLLER showUnreadCountOnApplicationIconAndWindowTitle];
 }
 
 /* addBacktrack
@@ -887,7 +903,7 @@
 	if (folderId != currentFolderId)
 		return;
 	
-	Folder * folder = [[Database sharedDatabase] folderFromID:folderId];
+	Folder * folder = [[Database sharedManager] folderFromID:folderId];
 	if (IsSmartFolder(folder) || IsTrashFolder(folder))
 		[mainArticleView refreshFolder:MA_Refresh_ReloadFromDatabase];
 }
@@ -909,16 +925,20 @@
 {
 	[[NSNotificationCenter defaultCenter] removeObserver:self];
 	[mainArticleView release];
-	self.mainArticleView=nil;
+	mainArticleView=nil;
 	[backtrackArray release];
-	self.backtrackArray=nil;
+	backtrackArray=nil;
 	[sortColumnIdentifier release];
+	sortColumnIdentifier=nil;
 	[folderArrayOfArticles release];
-	self.folderArrayOfArticles=nil;
+	folderArrayOfArticles=nil;
 	[currentArrayOfArticles release];
-	self.currentArrayOfArticles=nil;
+	currentArrayOfArticles=nil;
 	[articleSortSpecifiers release];
+	articleSortSpecifiers=nil;
 	[articleToPreserve release];
+	articleToPreserve=nil;
+	[foldersTree release];
 	[super dealloc];
 }
 @end

@@ -56,7 +56,10 @@ static NSMutableDictionary * stylePathMappings = nil;
 
 		// Select the user's current style or revert back to the
 		// default style otherwise.
-		[self initForStyle:[[Preferences standardPreferences] displayStyle]];
+		Preferences * prefs = [Preferences standardPreferences];
+		[self initForStyle:[prefs displayStyle]];
+		// enlarge / reduce the text size according to user's setting
+		[self setTextSizeMultiplier:[prefs textSizeMultiplier]];
 	}
 	return self;
 }
@@ -66,7 +69,9 @@ static NSMutableDictionary * stylePathMappings = nil;
  */
 -(void)handleStyleChange:(NSNotificationCenter *)nc
 {
-	[self initForStyle:[[Preferences standardPreferences] displayStyle]];
+	Preferences * prefs = [Preferences standardPreferences];
+	[self initForStyle:[prefs displayStyle]];
+	[self setTextSizeMultiplier:[prefs textSizeMultiplier]];
 }
 
 /* performDragOperation
@@ -243,13 +248,12 @@ static NSMutableDictionary * stylePathMappings = nil;
 	// Reset current html string.
 	if (currentHTML != nil)
 		[currentHTML release];
-	currentHTML = [[NSString alloc] initWithString: @"<HTML></HTML>"];
+	currentHTML = [[NSString alloc] initWithString: @""];
 	
 	// Load a blank HTML page.
-	NSString * htmlText = [[NSString alloc] initWithString: @"<HTML></HTML>"];
+	NSString * htmlText = @"";
 	[[self mainFrame] loadHTMLString:htmlText
 					   baseURL:[NSURL URLWithString:@""]];
-	[htmlText release];
 }
 
 /* setHTML
@@ -285,7 +289,7 @@ static NSMutableDictionary * stylePathMappings = nil;
 	if ([[theEvent characters] length] == 1)
 	{
 		unichar keyChar = [[theEvent characters] characterAtIndex:0];
-		if ([[NSApp delegate] handleKeyDown:keyChar withFlags:[theEvent modifierFlags]])
+		if ([APPCONTROLLER handleKeyDown:keyChar withFlags:[theEvent modifierFlags]])
 			return;
 		
 		//Don't go back or forward in article view.
@@ -329,6 +333,28 @@ static NSMutableDictionary * stylePathMappings = nil;
 	}		
 }
 
+#pragma mark -
+#pragma mark WebView methods overrides
+
+/* makeTextSmaller
+ */
+-(IBAction)makeTextSmaller:(id)sender
+{
+	[super makeTextSmaller:sender];
+	[[Preferences standardPreferences] setTextSizeMultiplier:[self textSizeMultiplier]];
+}
+
+/* makeTextLarger
+ */
+-(IBAction)makeTextLarger:(id)sender
+{
+	[super makeTextLarger:sender];
+	[[Preferences standardPreferences] setTextSizeMultiplier:[self textSizeMultiplier]];
+}
+
+#pragma mark -
+#pragma mark WebKit protocols
+
 /* decidePolicyForNewWindowAction
  * Called by the web view to get our policy on handling actions that would open a new window.
  * When opening clicked links in the background or an external browser, we want the first responder to return to the article list.
@@ -337,7 +363,7 @@ static NSMutableDictionary * stylePathMappings = nil;
 {
 	int navType = [[actionInformation valueForKey:WebActionNavigationTypeKey] intValue];
 	if ((navType == WebNavigationTypeLinkClicked) && ([[Preferences standardPreferences] openLinksInBackground] || ![[Preferences standardPreferences] openLinksInVienna]))
-		[[NSApp mainWindow] makeFirstResponder:[[[[NSApp delegate] browserView] primaryTabItemView] mainView]];
+		[[NSApp mainWindow] makeFirstResponder:[[[APPCONTROLLER browserView] primaryTabItemView] mainView]];
 	
 	[super webView:sender decidePolicyForNewWindowAction:actionInformation request:request newFrameName:frameName decisionListener:listener];
 }
@@ -361,7 +387,7 @@ static NSMutableDictionary * stylePathMappings = nil;
 	
 	int navType = [[actionInformation valueForKey:WebActionNavigationTypeKey] intValue];
 	if ((navType == WebNavigationTypeLinkClicked) && ([[Preferences standardPreferences] openLinksInBackground] || ![[Preferences standardPreferences] openLinksInVienna]))
-		[[NSApp mainWindow] makeFirstResponder:[[[[NSApp delegate] browserView] primaryTabItemView] mainView]];
+		[[NSApp mainWindow] makeFirstResponder:[[[APPCONTROLLER browserView] primaryTabItemView] mainView]];
 	
 	[super webView:sender decidePolicyForNavigationAction:actionInformation request:request frame:frame decisionListener:listener];
 }	
@@ -373,8 +399,13 @@ static NSMutableDictionary * stylePathMappings = nil;
 {
 	[[NSNotificationCenter defaultCenter] removeObserver:self];
 	[cssStylesheet release];
+	cssStylesheet=nil;
 	[htmlTemplate release];
+	htmlTemplate=nil;
 	[currentHTML release];
+	currentHTML=nil;
+	[jsScript release];
+	jsScript=nil;
 	[super dealloc];
 }
 @end

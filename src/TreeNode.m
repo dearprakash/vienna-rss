@@ -77,7 +77,7 @@
 			}
 			else
 			{
-				NSAssert1(TRUE, @"Unsupported folder sort method in addChild: %ld", sortMethod);
+				NSAssert1(TRUE, @"Unsupported folder sort method in addChild: %ld", (long)sortMethod);
 			}
 			++insertIndex;
 		}
@@ -116,7 +116,7 @@
 		break;
 		
 	default:
-		NSAssert1(TRUE, @"Unsupported folder sort method in sortChildren: %ld", sortMethod);
+		NSAssert1(TRUE, @"Unsupported folder sort method in sortChildren: %ld", (long)sortMethod);
 		break;
 	}
 }
@@ -313,7 +313,8 @@
  */
 -(NSString *)description
 {
-	return [NSString stringWithFormat:@"%@ (Parent=%p, # of children=%ld)", [folder name], parentNode, [children count]];
+	return [NSString stringWithFormat:@"%@ (Parent=%p, # of children=%ld)",
+            [folder name], parentNode, (unsigned long)[children count]];
 }
 
 /* allocAndStartProgressIndicator:
@@ -326,7 +327,6 @@
 	progressIndicator = [[NSProgressIndicator alloc] initWithFrame:progressRect];
 	[progressIndicator setControlSize:NSSmallControlSize];
 	[progressIndicator setStyle:NSProgressIndicatorSpinningStyle];
-	[progressIndicator setDisplayedWhenStopped:YES];
 	[progressIndicator setUsesThreadedAnimation:YES];
 	
 	// Start the animation.
@@ -344,9 +344,7 @@
 	if ( progressIndicator)
 	{
 		// Stop the animation and remove from the superview.
-		[progressIndicator setDisplayedWhenStopped:NO];
 		[progressIndicator stopAnimation:self];
-		[[progressIndicator superview] setNeedsDisplayInRect:[progressIndicator frame]];
 		[progressIndicator removeFromSuperviewWithoutNeedingDisplay];
 		
 		// Release the progress indicator.
@@ -385,7 +383,11 @@
 -(void)dealloc
 {
 	[children release];
+	children=nil;
 	[folder release];
+	folder=nil;
+	[progressIndicator release];
+	progressIndicator=nil;
 	[super dealloc];
 }
 @end

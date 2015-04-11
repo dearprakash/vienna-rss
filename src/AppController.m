@@ -19,7 +19,13 @@
 //
 
 #import "AppController.h"
-#import "NewPreferencesController.h"
+
+#import "MASPreferencesWindowController.h"
+#import "GeneralPreferencesViewController.h"
+#import "AppearancePreferencesViewController.h"
+#import "SyncingPreferencesViewController.h"
+#import "AdvancedPreferencesViewController.h"
+
 #import "FoldersTree.h"
 #import "ArticleListView.h"
 #import "UnifiedDisplayView.h"
@@ -62,6 +68,8 @@
 #import "GoogleReader.h"
 #import "VTPG_Common.h"
 #import "Database.h"
+#import "BJRWindowWithToolbar.h"
+#import "NSURL+Utils.h"
 
 
 @interface AppController (Private)
@@ -125,15 +133,43 @@ static const int MA_StatusBarHeight = 23;
 static io_connect_t root_port;
 static void MySleepCallBack(void * x, io_service_t y, natural_t messageType, void * messageArgument);
 
-@implementation AppController
+@implementation AppController {
+}
 
+// C array of NSDateFormatter format strings. This is array is used only once to populate dateFormatterArray.
+// Note: for every four-digit year entry, we need an earlier two-digit year entry so that NSDateFormatter parses
+//       two-digit years considering the two-digit-year start date.
+static NSString * kDateFormats[] = {
+	//For the different date formats, see <http://unicode.org/reports/tr35/#Date_Format_Patterns>
+	//IMPORTANT hack : remove in these strings any colon [:] beginning from character # 20 (first char is #0)
+	// 2010-09-28T15:31:25Z and 2010-09-28T17:31:25+02:00
+	@"yy-MM-dd'T'HH:mm:ssZZZ",     @"yyyy-MM-dd'T'HH:mm:ssZZZ",
+	// 2010-09-28T15:31:25.815+02:00
+	@"yy-MM-dd'T'HH:mm:ss.SSSZZZ", @"yyyy-MM-dd'T'HH:mm:ss.SSSZZZ",
+	// "Sat, 13 Dec 2008 18:45:15 EAT" and "Fri, 12 Dec 2008 18:45:15 -08:00"
+	@"EEE, dd MMM yy HH:mmss zzz", @"EEE, dd MMM yyyy HH:mmss zzz",
+	@"EEE, dd MMM yy HH:mmss ZZZ", @"EEE, dd MMM yyyy HH:mmss ZZZ",
+	@"EEE, dd MMM yy HH:mmss",     @"EEE, dd MMM yyyy HH:mmss",
+	// Required by compatibility with older OS X versions
+	@"yy-MM-dd'T'HH:mm:ss'Z'",     @"yyyy-MM-dd'T'HH:mm:ss'Z'",
+	@"yy-MM-dd'T'HH:mm:ss.SSS'Z'", @"yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
+	// Other exotic and non standard date formats
+	@"yy-MM-dd HH:mm:ss ZZZ",      @"yyyy-MM-dd HH:mm:ss ZZZ",
+	@"yy-MM-dd HH:mm:ss zzz",      @"yyyy-MM-dd HH:mm:ss zzz",
+	@"EEE dd MMM yy HH:mmss zzz",  @"EEE dd MMM yyyy HH:mmss zzz",
+	@"EEE dd MMM yy HH:mmss ZZZ",  @"EEE dd MMM yyyy HH:mmss ZZZ",
+	@"EEE dd MMM yy HH:mmss",      @"EEE dd MMM yyyy HH:mmss",
+	@"EEEE dd MMMM yy",            @"EEEE dd MMMM yyyy",
+};
+static const size_t kNumberOfDateFormatters = sizeof(kDateFormats) / sizeof(kDateFormats[0]);
 // C array of NSDateFormatter's : creating a NSDateFormatter is very expensive, so we create
 //  those we need early in the program launch and keep them in memory.
-#define kNumberOfDateFormatters 13
 static NSDateFormatter * dateFormatterArray[kNumberOfDateFormatters];
 
 static NSLock * dateFormatters_lock;
 static NSLocale * enUSLocale;
+
+@synthesize rssFeed = _rssFeed;
 
 /* init
  * Class instance initialisation.
@@ -184,7 +220,7 @@ static NSLocale * enUSLocale;
 	// Set the delegates and title
 	[mainWindow setDelegate:self];
 	[mainWindow setTitle:[self appName]];
-	[NSApp setDelegate:self];
+	[[NSApplication sharedApplication] setDelegate:self];
 	[mainWindow setMinSize: NSMakeSize(MA_Default_Main_Window_Min_Width, MA_Default_Main_Window_Min_Height)];
 	
 	// Initialise the plugin manager now that the UI is ready
@@ -228,12 +264,7 @@ static NSLocale * enUSLocale;
 	static BOOL doneSafeInit = NO;
 	if (!doneSafeInit)
 	{
-		NSString * safariVersion = [[[NSBundle bundleWithPath:@"/Applications/Safari.app"] infoDictionary] objectForKey:@"CFBundleVersion"];
-		if (safariVersion)
-			safariVersion = [safariVersion substringFromIndex:1];
-		else
-			safariVersion = @"532.22";
-		[ASIHTTPRequest setDefaultUserAgentString:[NSString stringWithFormat:MA_DefaultUserAgentString, [[((ViennaApp *)NSApp) applicationVersion] firstWord], safariVersion]];
+		[ASIHTTPRequest setDefaultUserAgentString:[NSString stringWithFormat:MA_DefaultUserAgentString, [[((ViennaApp *)NSApp) applicationVersion] firstWord]]];
         
 		[foldersTree initialiseFoldersTree];
 		[mainArticleView initialiseArticleView];
@@ -296,6 +327,14 @@ static NSLocale * enUSLocale;
 	}
 }
 
+#pragma mark Accessor Methods
+
+- (NewSubscription *)rssFeed {
+    if (!_rssFeed)
+        _rssFeed = [[NewSubscription alloc] initWithDatabase:db];
+    return _rssFeed;
+}
+
 #pragma mark IORegisterForSystemPower
 
 /* MySleepCallBack
@@ -306,7 +345,7 @@ static void MySleepCallBack(void * refCon, io_service_t service, natural_t messa
 {
 	if (messageType == kIOMessageSystemHasPoweredOn)
 	{
-		AppController * app = (AppController *)[NSApp delegate];
+		AppController * app = APPCONTROLLER;
 		Preferences * prefs = [Preferences standardPreferences];
 		int frequency = [prefs refreshFrequency];
 		if (frequency > 0)
@@ -428,7 +467,7 @@ static void MyScriptsFolderWatcherCallBack(FNMessage message, OptionBits flags, 
 	[self setStatusMessage:nil persist:NO];
 	
 	// Initialize the database
-	if ((db = [Database sharedDatabase]) == nil)
+	if ((db = [Database sharedManager]) == nil)
 	{
 		[NSApp terminate:nil];
 		return;
@@ -509,11 +548,7 @@ static void MyScriptsFolderWatcherCallBack(FNMessage message, OptionBits flags, 
 	
 	// Growl initialization
 	NSBundle *mainBundle = [NSBundle mainBundle];
-	NSString *path = [[mainBundle privateFrameworksPath] stringByAppendingPathComponent:@"Growl"];
-	if(NSAppKitVersionNumber < 1038)
-		path = [path stringByAppendingPathComponent:@"Legacy"];
-
-	path = [path stringByAppendingPathComponent:@"Growl.framework"];
+	NSString *path = [[mainBundle privateFrameworksPath] stringByAppendingPathComponent:@"Growl.framework"];
 	LOG_NS(@"path: %@", path);
 	NSBundle *growlFramework = [NSBundle bundleWithPath:path];
 	if([growlFramework load])
@@ -558,6 +593,13 @@ static void MyScriptsFolderWatcherCallBack(FNMessage message, OptionBits flags, 
 
 	if ([prefs refreshOnStartup]) 
 		[self refreshAllSubscriptions:self];
+    
+    
+    // Check if we have previously asked the user to send anonymous system profile
+    if([[NSUserDefaults standardUserDefaults] objectForKey:MAPref_SendSystemProfileInfo] == nil) {
+        [self showSystemProfileInfoAlert];
+    }
+
 }
 
 /* applicationShouldHandleReopen
@@ -726,6 +768,7 @@ static void MyScriptsFolderWatcherCallBack(FNMessage message, OptionBits flags, 
 			if (!hasOSScriptsMenu())
 				[self initScriptsMenu];
 		}
+		return YES;
 	}
 	if ([[filename pathExtension] isEqualToString:@"opml"])
 	{
@@ -733,7 +776,21 @@ static void MyScriptsFolderWatcherCallBack(FNMessage message, OptionBits flags, 
 		if (returnCode == NSAlertAlternateReturn)
 			return NO;
 		[self importFromFile:filename];
+		return YES;
 	}
+    if ([[filename pathExtension] isEqualToString:@"webloc"])
+    {
+        NSURL* url = [NSURL URLFromInetloc:filename];
+        if (![mainWindow isVisible])
+        	[mainWindow makeKeyAndOrderFront:self];
+        if (url != nil && ![db readOnly])
+        {
+            [self.rssFeed newSubscription:mainWindow underParent:[foldersTree groupParentSelection] initialURL:[url absoluteString]];
+		    return YES;
+        }
+        else
+        	return NO;
+    }
 	return NO;
 }
 
@@ -1024,29 +1081,8 @@ static void MyScriptsFolderWatcherCallBack(FNMessage message, OptionBits flags, 
 		dateFormatterArray[i] = [[[NSDateFormatter alloc] init] retain];
 		[dateFormatterArray[i] setLocale:enUSLocale];
 		[dateFormatterArray[i] setTimeZone:[NSTimeZone timeZoneForSecondsFromGMT:0]];
+        [dateFormatterArray[i] setDateFormat:kDateFormats[i]];
 	}
-
-	//For the different date formats, see <http://unicode.org/reports/tr35/#Date_Format_Patterns>
-	//IMPORTANT hack : remove in these strings any colon [:] beginning from character # 20 (first char is #0)
-	// 2010-09-28T15:31:25Z and 2010-09-28T17:31:25+02:00
-	[dateFormatterArray[0] setDateFormat:@"yyyy-MM-dd'T'HH:mm:ssZZZ"];
-	// 2010-09-28T15:31:25.815+02:00
-	[dateFormatterArray[1] setDateFormat:@"yyyy-MM-dd'T'HH:mm:ss.SSSZZZ"];
-	// "Sat, 13 Dec 2008 18:45:15 EAT" and "Fri, 12 Dec 2008 18:45:15 -08:00"
-	[dateFormatterArray[2] setDateFormat:@"EEE, dd MMM yyyy HH:mmss zzz"];
-	[dateFormatterArray[3] setDateFormat:@"EEE, dd MMM yyyy HH:mmss ZZZ"];
-	[dateFormatterArray[4] setDateFormat:@"EEE, dd MMM yyyy HH:mmss"];
-	// Required by compatibility with older OS X versions
-	[dateFormatterArray[5] setDateFormat:@"yyyy-MM-dd'T'HH:mm:ss'Z'"];
-	[dateFormatterArray[6] setDateFormat:@"yyyy-MM-dd'T'HH:mm:ss.SSS'Z'"];
-	// Other exotic and non standard date formats
-	[dateFormatterArray[7] setDateFormat:@"yyyy-MM-dd HH:mm:ss ZZZ"];
-	[dateFormatterArray[8] setDateFormat:@"yyyy-MM-dd HH:mm:ss zzz"];
-	[dateFormatterArray[9] setDateFormat:@"EEE dd MMM yyyy HH:mmss zzz"];
-	[dateFormatterArray[10] setDateFormat:@"EEE dd MMM yyyy HH:mmss ZZZ"];
-	[dateFormatterArray[11] setDateFormat:@"EEE dd MMM yyyy HH:mmss"];
-	[dateFormatterArray[12] setDateFormat:@"EEEE dd MMMM yyyy"];
-
 
 	// end of initialization of date formatters
 }
@@ -1132,7 +1168,7 @@ static void MyScriptsFolderWatcherCallBack(FNMessage message, OptionBits flags, 
 					[menuItem setAction:@selector(openWebElementInNewTab:)];
 					[menuItem setRepresentedObject:imageURL];
 					[menuItem setTag:WebMenuItemTagOther];
-					newMenuItem = [[NSMenuItem alloc] init];
+					newMenuItem = [[NSMenuItem new] autorelease];
 					if (newMenuItem != nil)
 					{
 						[newMenuItem setTitle:[NSString stringWithFormat:NSLocalizedString(@"Open Image in %@", nil), defaultBrowser]];
@@ -1142,7 +1178,6 @@ static void MyScriptsFolderWatcherCallBack(FNMessage message, OptionBits flags, 
 						[newMenuItem setTag:WebMenuItemTagOther];
 						[newDefaultMenu insertObject:newMenuItem atIndex:index + 1];
 					}
-					[newMenuItem release];
 				}
 				break;
 				
@@ -1181,7 +1216,7 @@ static void MyScriptsFolderWatcherCallBack(FNMessage message, OptionBits flags, 
 		[newDefaultMenu addObject:[NSMenuItem separatorItem]];
 		
 		// Add command to open the current page in the external browser
-		newMenuItem = [[NSMenuItem alloc] init];
+		newMenuItem = [[NSMenuItem new] autorelease];
 		if (newMenuItem != nil)
 		{
 			[newMenuItem setTitle:[NSString stringWithFormat:NSLocalizedString(@"Open Page in %@", nil), defaultBrowser]];
@@ -1190,10 +1225,9 @@ static void MyScriptsFolderWatcherCallBack(FNMessage message, OptionBits flags, 
 			[newMenuItem setTag:WebMenuItemTagOther];
 			[newDefaultMenu addObject:newMenuItem];
 		}
-		[newMenuItem release];
 		
 		// Add command to copy the URL of the current page to the clipboard
-		newMenuItem = [[NSMenuItem alloc] init];
+		newMenuItem = [[NSMenuItem new] autorelease];
 		if (newMenuItem != nil)
 		{
 			[newMenuItem setTitle:NSLocalizedString(@"Copy Page Link to Clipboard", nil)];
@@ -1202,7 +1236,6 @@ static void MyScriptsFolderWatcherCallBack(FNMessage message, OptionBits flags, 
 			[newMenuItem setTag:WebMenuItemTagOther];
 			[newDefaultMenu addObject:newMenuItem];
 		}
-		[newMenuItem release];
 	}
 	
 	return [newDefaultMenu autorelease];
@@ -1978,6 +2011,7 @@ static void MyScriptsFolderWatcherCallBack(FNMessage message, OptionBits flags, 
  */
 -(void)showUnreadCountOnApplicationIconAndWindowTitle
 {
+	@synchronized([NSApp dockTile]) {
 	int currentCountOfUnread = [db countOfUnread];
 	if (currentCountOfUnread == lastCountOfUnread)
 		return;
@@ -2003,6 +2037,7 @@ static void MyScriptsFolderWatcherCallBack(FNMessage message, OptionBits flags, 
 	NSString * countdown = [NSString stringWithFormat:@"%i", currentCountOfUnread];
 	[[NSApp dockTile] setBadgeLabel:countdown];
 
+	} // @synchronized
 }
 
 /* handleAbout
@@ -2056,13 +2091,14 @@ static void MyScriptsFolderWatcherCallBack(FNMessage message, OptionBits flags, 
 /* showPreferencePanel
  * Display the Preference Panel.
  */
+/*
 -(IBAction)showPreferencePanel:(id)sender
 {
 	if (!preferenceController)
 		preferenceController = [[NewPreferencesController alloc] init];
 	[NSApp activateIgnoringOtherApps:YES];
 	[preferenceController showWindow:self];
-}
+} */
 
 /* printDocument
  * Print the selected articles in the article window.
@@ -2180,13 +2216,19 @@ static void MyScriptsFolderWatcherCallBack(FNMessage message, OptionBits flags, 
 	{
 		if (lastCountOfUnread == 0)
 		{
-			[appStatusItem setImage:[NSImage imageNamed:@"statusBarIcon.tiff"]];
+            NSImage *statusBarImage = [NSImage imageNamed:@"statusBarIcon.png"];
+            [statusBarImage setTemplate:YES];
+            [appStatusItem setImage:statusBarImage];
 			[appStatusItem setTitle:nil];
 		}
 		else
 		{
-			[appStatusItem setImage:[NSImage imageNamed:@"statusBarIconUnread.tiff"]];
+            NSImage *statusBarImage = [NSImage imageNamed:@"statusBarIconUnread.png"];
+            [statusBarImage setTemplate:YES];
+            [appStatusItem setImage:statusBarImage];
 			[appStatusItem setTitle:[NSString stringWithFormat:@"%u", lastCountOfUnread]];
+			// Yosemite hack : need to insist for displaying correctly icon and text
+            [appStatusItem setImage:statusBarImage];
 		}
 	}
 }
@@ -2226,9 +2268,7 @@ static void MyScriptsFolderWatcherCallBack(FNMessage message, OptionBits flags, 
 {
 	if (IsRSSFolder(folder))
 	{
-		if (!rssFeed)
-			rssFeed = [[NewSubscription alloc] initWithDatabase:db];
-		[rssFeed editSubscription:mainWindow folderId:[folder itemId]];
+		[self.rssFeed editSubscription:mainWindow folderId:[folder itemId]];
 	}
 	else if (IsSmartFolder(folder))
 	{
@@ -2454,9 +2494,6 @@ static void MyScriptsFolderWatcherCallBack(FNMessage message, OptionBits flags, 
 		[item setButtonImage:@"refreshButton"];
 		
 		[self showUnreadCountOnApplicationIconAndWindowTitle];
-		
-		// Refresh the current folder.
-		[articleController refreshCurrentFolder];
 		
 		// Bounce the dock icon for 1 second if the bounce method has been selected.
 		int newUnread = [[RefreshManager sharedManager] countOfNewArticles] + [[GoogleReader sharedManager] countOfNewArticles];
@@ -2699,7 +2736,7 @@ static void MyScriptsFolderWatcherCallBack(FNMessage message, OptionBits flags, 
 		case 'U':
 		case 'r':
 		case 'R':
-			[self markRead:self];
+			[self markReadToggle:self];
 			return YES;
 			
 		case 's':
@@ -2839,11 +2876,11 @@ static void MyScriptsFolderWatcherCallBack(FNMessage message, OptionBits flags, 
 	}
 	
 	// Create then select the new folder.
-	[db beginTransaction];
-	NSInteger folderId = [db addGoogleReaderFolder:title underParent:parentId afterChild:predecessorId subscriptionURL:url];
-	[db commitTransaction];
-	
-	
+	NSInteger folderId = [db addGoogleReaderFolder:title
+                                       underParent:parentId
+                                        afterChild:predecessorId
+                                   subscriptionURL:url];
+		
 	if (folderId != -1)
 	{
 		//		[foldersTree selectFolder:folderId];
@@ -2863,6 +2900,8 @@ static void MyScriptsFolderWatcherCallBack(FNMessage message, OptionBits flags, 
 	// Replace feed:// with http:// if necessary
 	if ([urlString hasPrefix:@"feed://"])
 		urlString = [NSString stringWithFormat:@"http://%@", [urlString substringFromIndex:7]];
+
+	urlString = [cleanedUpAndEscapedUrlFromString(urlString) absoluteString];
 	
 	// If the folder already exists, just select it.
 	Folder * folder = [db folderFromFeedURL:urlString];
@@ -2886,18 +2925,22 @@ static void MyScriptsFolderWatcherCallBack(FNMessage message, OptionBits flags, 
 	}
 	else
 	{ //creates locally
-		[db beginTransaction];
-		NSInteger folderId = [db addRSSFolder:[Database untitledFeedFolderName] underParent:parentId afterChild:predecessorId subscriptionURL:urlString];
-		[db commitTransaction];
+		NSInteger folderId = [db addRSSFolder:[Database untitledFeedFolderName]
+                                  underParent:parentId
+                                   afterChild:predecessorId
+                              subscriptionURL:urlString];
 
 		if (folderId != -1)
 		{
 			[foldersTree selectFolder:folderId];
-			if (isAccessible(urlString))
+            if (isAccessible(urlString))
 			{
 				Folder * folder = [db folderFromID:folderId];
 				[[RefreshManager sharedManager] refreshSubscriptionsAfterSubscribe:[NSArray arrayWithObject:folder] ignoringSubscriptionStatus:NO];
-			}
+            } else if ([urlString hasPrefix:@"file"]) {
+                Folder * folder = [db folderFromID:folderId];
+                [[RefreshManager sharedManager] refreshSubscriptionsAfterSubscribe:[NSArray arrayWithObject:folder] ignoringSubscriptionStatus:NO];
+            }
 		}
 	}
 }
@@ -2907,9 +2950,7 @@ static void MyScriptsFolderWatcherCallBack(FNMessage message, OptionBits flags, 
  */
 -(IBAction)newSubscription:(id)sender
 {
-	if (!rssFeed)
-		rssFeed = [[NewSubscription alloc] initWithDatabase:db];
-	[rssFeed newSubscription:mainWindow underParent:[foldersTree groupParentSelection] initialURL:nil];
+	[self.rssFeed newSubscription:mainWindow underParent:[foldersTree groupParentSelection] initialURL:nil];
 }
 
 /* newSmartFolder
@@ -3011,14 +3052,13 @@ static void MyScriptsFolderWatcherCallBack(FNMessage message, OptionBits flags, 
 	{
 		if ([folder isRSSFolder])
 		{
-			XMLSourceWindow * sourceWindow = [[XMLSourceWindow alloc] initWithFolder:folder];
+			XMLSourceWindow * sourceWindow = [[[XMLSourceWindow alloc] initWithFolder:folder] autorelease];
 			
 			if (sourceWindow != nil)
 			{
 				if (sourceWindows == nil)
 					sourceWindows = [[NSMutableArray alloc] init];
 				[sourceWindows addObject:sourceWindow];
-				[sourceWindow release];
 			}
 			[[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(sourceWindowWillClose:) name:NSWindowWillCloseNotification object:sourceWindow];
 			
@@ -3128,13 +3168,25 @@ static void MyScriptsFolderWatcherCallBack(FNMessage message, OptionBits flags, 
 {
 	if (![db readOnly])
 	{
-		[articleController markAllReadByArray:[foldersTree folders:0] withUndo:NO withRefresh:YES];
-		[self clearUndoStack];
+		[articleController markAllReadByArray:[foldersTree folders:0] withUndo:YES withRefresh:YES];
+	}
+}
+
+/* markReadToggle
+ * Toggle the read/unread state of the selected articles
+ */
+-(IBAction)markReadToggle:(id)sender
+{
+	Article * theArticle = [self selectedArticle];
+	if (theArticle != nil && ![db readOnly])
+	{
+		NSArray * articleArray = [articleController markedArticleRange];
+		[articleController markReadByArray:articleArray readFlag:![theArticle isRead]];
 	}
 }
 
 /* markRead
- * Toggle the read/unread state of the selected articles
+ * Mark read the selected articles
  */
 -(IBAction)markRead:(id)sender
 {
@@ -3142,7 +3194,20 @@ static void MyScriptsFolderWatcherCallBack(FNMessage message, OptionBits flags, 
 	if (theArticle != nil && ![db readOnly])
 	{
 		NSArray * articleArray = [articleController markedArticleRange];
-		[articleController markReadByArray:articleArray readFlag:![theArticle isRead]];
+		[articleController markReadByArray:articleArray readFlag:YES];
+	}
+}
+
+/* markUnread
+ * Mark unread the selected articles
+ */
+-(IBAction)markUnread:(id)sender
+{
+	Article * theArticle = [self selectedArticle];
+	if (theArticle != nil && ![db readOnly])
+	{
+		NSArray * articleArray = [articleController markedArticleRange];
+		[articleController markReadByArray:articleArray readFlag:NO];
 	}
 }
 
@@ -3235,9 +3300,7 @@ static void MyScriptsFolderWatcherCallBack(FNMessage message, OptionBits flags, 
 			return;
 	}
 	
-	// End any editing
-	if (rssFeed != nil)
-		[rssFeed doEditCancel:nil];
+
 	if (smartFolder != nil)
 		[smartFolder doCancel:nil];
 	if ([(NSControl *)[foldersTree mainView] abortEditing])
@@ -3309,20 +3372,18 @@ static void MyScriptsFolderWatcherCallBack(FNMessage message, OptionBits flags, 
 	for (index = 0; index < count; ++index)
 	{
 		Folder * folder = [selectedFolders objectAtIndex:index];
-		int folderID = [folder itemId];
         
         if (IsUnsubscribed(folder)) {
             // Currently unsubscribed, so re-subscribe locally
-            [[Database sharedDatabase] clearFolderFlag:folderID flagToClear:MA_FFlag_Unsubscribed];
+            [[Database sharedManager] clearFlag:MA_FFlag_Unsubscribed forFolder:folder.itemId];
         } else {
             // Currently subscribed, so unsubscribe locally
-            [[Database sharedDatabase] setFolderFlag:folderID flagToSet:MA_FFlag_Unsubscribed];
+            [[Database sharedManager] setFlag:MA_FFlag_Unsubscribed forFolder:folder.itemId];
         }
 
-		[[NSNotificationCenter defaultCenter] postNotificationName:@"MA_Notify_FoldersUpdated" object:[NSNumber numberWithInt:folderID]];
+		[[NSNotificationCenter defaultCenter] postNotificationName:@"MA_Notify_FoldersUpdated"
+                                                            object:@(folder.itemId)];
 	}
-    
-
 }
 
 /* setLoadFullHTMLFlag
@@ -3343,12 +3404,12 @@ static void MyScriptsFolderWatcherCallBack(FNMessage message, OptionBits flags, 
 		if (loadFullHTMLPages)
 		{
 			[folder setFlag:MA_FFlag_LoadFullHTML];
-			[[Database sharedDatabase] setFolderFlag:folderID flagToSet:MA_FFlag_LoadFullHTML];
+            [[Database sharedManager] setFlag:MA_FFlag_LoadFullHTML forFolder:folderID];
 		}
 		else
 		{
 			[folder clearFlag:MA_FFlag_LoadFullHTML];
-			[[Database sharedDatabase] clearFolderFlag:folderID flagToClear:MA_FFlag_LoadFullHTML];
+            [[Database sharedManager] clearFlag:MA_FFlag_LoadFullHTML forFolder:folderID];
 		}
 		[[NSNotificationCenter defaultCenter] postNotificationName:@"MA_Notify_LoadFullHTMLChange" object:[NSNumber numberWithInt:folderID]];
 	}
@@ -3791,8 +3852,8 @@ static void MyScriptsFolderWatcherCallBack(FNMessage message, OptionBits flags, 
 {
 	NSMutableString *mailtoLink = nil;
 	NSString * mailtoLineBreak = @"%0D%0A"; // necessary linebreak characters according to RFC
-	CFStringRef title;
-	CFStringRef link;
+	NSString * title;
+	NSString * link;
 	Article * currentArticle;
 	
 	// If the active tab is a web view, mail the URL ...
@@ -3805,8 +3866,6 @@ static void MyScriptsFolderWatcherCallBack(FNMessage message, OptionBits flags, 
 			title = percentEscape([browserView tabItemViewTitle:theView]);
 			link = percentEscape(viewLink);
 			mailtoLink = [NSMutableString stringWithFormat:@"mailto:?subject=%@&body=%@", title, link];
-			CFRelease(title);
-			CFRelease(link);
 		}
 	}
 	else
@@ -3821,8 +3880,6 @@ static void MyScriptsFolderWatcherCallBack(FNMessage message, OptionBits flags, 
 				title = percentEscape([currentArticle title]);
 				link = percentEscape([currentArticle link]);
 				mailtoLink = [NSMutableString stringWithFormat: @"mailto:?subject=%@&body=%@", title, link];
-				CFRelease(title);
-				CFRelease(link);
 			}
 			else
 			{
@@ -3832,8 +3889,6 @@ static void MyScriptsFolderWatcherCallBack(FNMessage message, OptionBits flags, 
 					title = percentEscape([currentArticle title]);
 					link = percentEscape([currentArticle link]);
 					[mailtoLink appendFormat: @"%@%@%@%@%@", title, mailtoLineBreak, link, mailtoLineBreak, mailtoLineBreak];
-					CFRelease(title);
-					CFRelease(link);
 				}
 			}
 		}
@@ -3882,7 +3937,7 @@ static void MyScriptsFolderWatcherCallBack(FNMessage message, OptionBits flags, 
 -(void)blogWithExternalEditor:(NSString *)externalEditorBundleIdentifier;
 {
 	// Is our target application running? If not, we'll launch it.
-	if (![[[[NSWorkspace sharedWorkspace] launchedApplications] valueForKey:@"NSApplicationBundleIdentifier"] containsObject:externalEditorBundleIdentifier])
+	if ([[NSRunningApplication runningApplicationsWithBundleIdentifier:externalEditorBundleIdentifier] count] == 0)
 	{
 		[[NSWorkspace sharedWorkspace] launchAppWithBundleIdentifier:externalEditorBundleIdentifier
 															 options:NSWorkspaceLaunchWithoutActivation
@@ -4048,15 +4103,17 @@ static void MyScriptsFolderWatcherCallBack(FNMessage message, OptionBits flags, 
  */
 -(void)setStatusMessage:(NSString *)newStatusText persist:(BOOL)persistenceFlag
 {
-	if (persistenceFlag)
-	{
-		[newStatusText retain];
-		[persistedStatusText release];
-		persistedStatusText = newStatusText;
+	@synchronized(persistedStatusText){
+		if (persistenceFlag)
+		{
+			[newStatusText retain];
+			[persistedStatusText release];
+			persistedStatusText = newStatusText;
+		}
+		if (newStatusText == nil || [newStatusText isBlank])
+			newStatusText = persistedStatusText;
+		[statusText setStringValue:(newStatusText ? newStatusText : @"")];
 	}
-	if (newStatusText == nil || [newStatusText isBlank])
-		newStatusText = persistedStatusText;
-	[statusText setStringValue:(newStatusText ? newStatusText : @"")];
 }
 
 /* viewAnimationCompleted
@@ -4454,13 +4511,11 @@ static void MyScriptsFolderWatcherCallBack(FNMessage message, OptionBits flags, 
 	else if (theAction == @selector(markRead:))
 	{
 		Article * thisArticle = [self selectedArticle];
-		if (thisArticle != nil)
-		{
-			if ([thisArticle isRead])
-				[menuItem setTitle:NSLocalizedString(@"Mark Unread", nil)];
-			else
-				[menuItem setTitle:NSLocalizedString(@"Mark Read", nil)];
-		}
+		return (thisArticle != nil && ![db readOnly] && isMainWindowVisible);
+	}
+	else if (theAction == @selector(markUnread:))
+	{
+		Article * thisArticle = [self selectedArticle];
 		return (thisArticle != nil && ![db readOnly] && isMainWindowVisible);
 	}
 	else if (theAction == @selector(mailLinkToArticlePage:))
@@ -4626,7 +4681,7 @@ static void MyScriptsFolderWatcherCallBack(FNMessage message, OptionBits flags, 
 	else if ([itemIdentifier isEqualToString: @"Action"])
 	{
 		[item setPopup:@"popupMenuButton" withMenu:(willBeInserted ? [self folderMenu] : nil)];
-		[item setLabel:NSLocalizedString(@"Actions", nil)];
+		[item setLabel:NSLocalizedString(@"Action", nil)];
 		[item setPaletteLabel:[item label]];
 		[item setToolTip:NSLocalizedString(@"Additional actions for the selected folder", nil)];
 	}
@@ -4680,11 +4735,89 @@ static void MyScriptsFolderWatcherCallBack(FNMessage message, OptionBits flags, 
 			 nil];
 }
 
+/*! showSystemProfileInfoAlert
+ * displays an alert asking the user to opt-in to sending anonymous system profile throug Sparkle
+ */
+-(void)showSystemProfileInfoAlert {
+    NSAlert *alert = [[NSAlert alloc] init];
+    [alert addButtonWithTitle:NSLocalizedString(@"OK", @"OK")];
+    [alert addButtonWithTitle:NSLocalizedString(@"No thanks", @"No thanks")];
+    [alert setMessageText:NSLocalizedString(@"Include anonymous system profile when checking for updates?", @"Include anonymous system profile when checking for updates?")];
+    [alert setInformativeText:NSLocalizedString(@"Include anonymous system profile when checking for updates text", @"This helps Vienna development by letting us know what versions of Mac OS X are most popular amongst our users.")];
+    [alert setAlertStyle:NSInformationalAlertStyle];
+    int buttonClicked = alert.runModal;
+    NSLog(@"buttonClicked: %d", buttonClicked);
+    switch (buttonClicked) {
+        case NSAlertFirstButtonReturn:
+            /* Agreed to send system profile. Uses preferences to set value otherwise 
+             the preference control is out of sync */
+            [[Preferences standardPreferences] setSendSystemSpecs:YES];
+            break;
+        case NSAlertSecondButtonReturn:
+            /* Declined to send system profile. Uses SUUpdater to set the value
+             otherwise it stays nil instead of being set to 0 */
+            [[SUUpdater sharedUpdater] setSendsSystemProfile:NO];
+            break;
+        default:
+            break;
+    }
+    [alert release];
+}
+
+
+#pragma mark - MASPreferences
+
+- (NSWindowController *)preferencesWindowController
+{
+    if (_preferencesWindowController == nil)
+    {
+        NSViewController *generalViewController = [[GeneralPreferencesViewController alloc] init];
+        NSViewController *appearanceViewController = [[AppearancePreferencesViewController alloc] init];
+        NSViewController *syncingViewController = [[SyncingPreferencesViewController alloc] init];
+        NSViewController *advancedViewController = [[AdvancedPreferencesViewController alloc] init];
+        NSArray *controllers = [[NSArray alloc] initWithObjects:generalViewController, appearanceViewController, syncingViewController, advancedViewController, nil];
+        
+        // To add a flexible space between General and Advanced preference panes insert [NSNull null]:
+        //     NSArray *controllers = [[NSArray alloc] initWithObjects:generalViewController, [NSNull null], advancedViewController, nil];
+        
+        [generalViewController release];
+        [appearanceViewController release];
+        [syncingViewController release];
+        [advancedViewController release];
+        
+        NSString *title = NSLocalizedString(@"Preferences", @"Common title for Preferences window");
+        _preferencesWindowController = [[MASPreferencesWindowController alloc] initWithViewControllers:controllers title:title];
+        [controllers release];
+    }
+    return _preferencesWindowController;
+}
+
+#pragma mark - MASPreferences Actions
+
+- (IBAction)showPreferencePanel:(id)sender
+{
+    [self.preferencesWindowController showWindow:nil];
+}
+
+NSString *const kFocusedAdvancedControlIndex = @"FocusedAdvancedControlIndex";
+
+- (NSInteger)focusedAdvancedControlIndex
+{
+    return [[NSUserDefaults standardUserDefaults] integerForKey:kFocusedAdvancedControlIndex];
+}
+
+- (void)setFocusedAdvancedControlIndex:(NSInteger)focusedAdvancedControlIndex
+{
+    [[NSUserDefaults standardUserDefaults] setInteger:focusedAdvancedControlIndex forKey:kFocusedAdvancedControlIndex];
+}
+
 /* dealloc
  * Clean up and release resources.
  */
 -(void)dealloc
 {
+	[mainWindow setDelegate:nil];
+	[splitView1 setDelegate:nil];
 	[[NSNotificationCenter defaultCenter] removeObserver:self];
 	[pluginManager release];
 	[scriptsMenuItem release];
@@ -4693,7 +4826,6 @@ static void MyScriptsFolderWatcherCallBack(FNMessage message, OptionBits flags, 
 	[persistedStatusText release];
 	[scriptPathMappings release];
 	[smartFolder release];
-	[rssFeed release];
 	[groupFolder release];
 	[preferenceController release];
 	[activityViewer release];
@@ -4705,7 +4837,9 @@ static void MyScriptsFolderWatcherCallBack(FNMessage message, OptionBits flags, 
 	[searchField release];
 	[sourceWindows release];
 	[searchString release];
+    [_preferencesWindowController release];
+    [self.rssFeed release];
 
-	[super dealloc];
+    [super dealloc];
 }
 @end

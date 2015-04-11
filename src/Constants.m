@@ -18,7 +18,8 @@
 //  limitations under the License.
 //
 
-NSString * MA_DefaultUserAgentString = @"Mozilla/5.0 Vienna/%@ Safari/%@";
+NSString * MA_DefaultUserAgentString = @"Mozilla/5.0 Vienna/%@";
+NSString * MA_BrowserUserAgentString = @"Vienna/%@ Safari/%@";
 
 NSString * MAPref_ArticleListFont = @"MessageListFont";
 NSString * MAPref_AutoSortFoldersTree = @"AutomaticallySortFoldersTree";
@@ -38,6 +39,7 @@ NSString * MAPref_PluginsFolder = @"PluginsFolder";
 NSString * MAPref_ScriptsFolder = @"ScriptsFolder";
 NSString * MAPref_RefreshThreads = @"MaxRefreshThreads";
 NSString * MAPref_ActiveStyleName = @"ActiveStyle";
+NSString * MAPref_ActiveTextSizeMultiplier = @"TextSizeMultiplier";
 NSString * MAPref_FolderStates = @"FolderStates";
 NSString * MAPref_BacktrackQueueSize = @"BacktrackQueueSize";
 NSString * MAPref_MarkReadInterval = @"MarkReadInterval";
@@ -49,6 +51,7 @@ NSString * MAPref_AutoExpireDuration = @"AutoExpireFrequency";
 NSString * MAPref_DownloadsList = @"DownloadsList";
 NSString * MAPref_ShowFolderImages = @"ShowFolderImages";
 NSString * MAPref_UseJavaScript = @"UseJavaScript";
+NSString * MAPref_UseWebPlugins = @"UseWebPlugins";
 NSString * MAPref_CachedArticleGUID = @"CachedArticleGUID";
 NSString * MAPref_ArticleSortDescriptors = @"ArticleSortDescriptors";
 NSString * MAPref_FilterMode = @"FilterMode";
@@ -72,6 +75,7 @@ NSString * MAPref_GoogleNewSubscription = @"GoogleNewSubscription";
 NSString * MAPref_ConcurrentDownloads = @"ConcurrentDownloads"; 
 NSString * MAPref_SyncServer = @"SyncServer";
 NSString * MAPref_SyncingUser = @"SyncingUser";
+NSString * MAPref_SendSystemProfileInfo = @"SUSendProfileInfo";
 
 const NSInteger MA_Default_BackTrackQueueSize = 20;
 const NSInteger MA_Default_RefreshThreads = 20;

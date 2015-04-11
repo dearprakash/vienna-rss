@@ -470,18 +470,15 @@
 	// Set the criteria condition
 	[criteriaTree setCondition:[criteriaConditionPopup selectedTag]];
 	
-	[db beginTransaction];
 	if (smartFolderId == -1)
 	{
-		AppController * controller = (AppController *)[NSApp delegate];
-		smartFolderId = [db addSmartFolder:folderName underParent:parentId withQuery:criteriaTree];
-        [db commitTransaction];
+		AppController * controller = APPCONTROLLER;
+		smartFolderId = [[Database sharedManager] addSmartFolder:folderName underParent:parentId withQuery:criteriaTree];
 		[controller selectFolder:smartFolderId];
 	}
 	else
     {
-		[db updateSearchFolder:smartFolderId withFolder:folderName withQuery:criteriaTree];
-        [db commitTransaction];
+		[[Database sharedManager] updateSearchFolder:smartFolderId withFolder:folderName withQuery:criteriaTree];
     }
 
 	[criteriaTree release];
@@ -627,8 +624,11 @@
 {
 	[[NSNotificationCenter defaultCenter] removeObserver:self];
 	[arrayOfViews release];
+	arrayOfViews=nil;
 	[nameToFieldMap release];
+	nameToFieldMap=nil;
 	[db release];
+	db=nil;
 	[super dealloc];
 }
 @end

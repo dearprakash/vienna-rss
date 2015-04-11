@@ -32,8 +32,6 @@
 	-(BOOL)isDownloadFileType:(NSURL *)filename;
 	-(void)loadMinimumFontSize;
 	-(void)handleMinimumFontSizeChange:(NSNotification *)nc;
-	-(void)loadUseJavaScript;
-	-(void)handleUseJavaScript:(NSNotification *)nc;
 @end
 
 @implementation TabbedWebView
@@ -68,17 +66,23 @@
 	
 	// Set up to be notified of changes
 	NSNotificationCenter * nc = [NSNotificationCenter defaultCenter];
-	[nc addObserver:self selector:@selector(handleMinimumFontSizeChange:) name:@"MA_Notify_MinimumFontSizeChange" object:nil];
-	[nc addObserver:self selector:@selector(handleUseJavaScriptChange:) name:@"MA_Notify_UseJavaScriptChange" object:nil];
+	[nc addObserver:self selector:@selector(handleMinimumFontSizeChange:)
+               name:kMA_Notify_MinimumFontSizeChange object:nil];
+	[nc addObserver:self selector:@selector(handleUseJavaScriptChange:)
+               name:kMA_Notify_UseJavaScriptChange object:nil];
+    [nc addObserver:self selector:@selector(handleUseWebPluginsChange:)
+               name:kMA_Notify_UseWebPluginsChange object:nil];
 	
-	// Handle minimum font size & using of JavaScript
+	// Handle minimum font size, use of JavaScript, and use of plugins
 	defaultWebPrefs = [[self preferences] retain];
 	[defaultWebPrefs setStandardFontFamily:@"Arial"];
 	[defaultWebPrefs setDefaultFontSize:12];
 	[defaultWebPrefs setPrivateBrowsingEnabled:NO];
 	[defaultWebPrefs setJavaScriptEnabled:NO];
+    [defaultWebPrefs setPlugInsEnabled:NO];
 	[self loadMinimumFontSize];
 	[self loadUseJavaScript];
+    [self loadUseWebPlugins];
 }
 
 /* setController
@@ -234,8 +238,15 @@
 	NSUInteger modifierFlags = [[actionInformation valueForKey:WebActionModifierFlagsKey] unsignedIntValue];
 	BOOL useAlternateBrowser = (modifierFlags & NSAlternateKeyMask) ? YES : NO; // This is to avoid problems in casting the value into BOOL
 	
+	NSString * scheme = [[[request URL] scheme] lowercaseString];
 	if (navType == WebNavigationTypeLinkClicked)
 	{
+		if ([scheme isEqualToString:@"file"] && [[[request URL] resourceSpecifier] hasPrefix:@"/#"])
+		// clicked a link to an anchor in the same webview
+		{
+			[listener use];
+			return;
+		}
 		if (openLinksInNewBrowser || (modifierFlags & NSCommandKeyMask))
 		{
 			[listener ignore];
@@ -253,7 +264,6 @@
 			}
 		}
 	}
-	NSString * scheme = [[[request URL] scheme] lowercaseString];
 	if (scheme == nil || [scheme isEqualToString:@""] || [scheme isEqualToString:@"http"] || [scheme isEqualToString:@"https"] || [scheme isEqualToString:@"feed"] || [scheme isEqualToString:@"file"] || [scheme isEqualToString:@"applewebdata"] || [scheme isEqualToString:@"about"])
 	{
 		[listener use];
@@ -279,6 +289,14 @@
 -(void)handleUseJavaScriptChange:(NSNotification *)nc
 {
 	[self loadUseJavaScript];
+}
+
+/* handleUseWebPluginsChange
+ * Called when the user changes the 'Use Javascript' setting.
+ */
+-(void)handleUseWebPluginsChange:(NSNotification *)nc
+{
+    [self loadUseWebPlugins];
 }
 
 /* loadMinimumFontSize
@@ -333,6 +351,15 @@
 {
 	Preferences * prefs = [Preferences standardPreferences];
 	[defaultWebPrefs setJavaScriptEnabled:[prefs useJavaScript]];
+}
+
+/* loadUseWebPlugins
+ * Sets up the web preferences for using JavaScript.
+ */
+-(void)loadUseWebPlugins
+{
+    Preferences * prefs = [Preferences standardPreferences];
+    [defaultWebPrefs setPlugInsEnabled:[prefs useWebPlugins]];
 }
 
 /* keyDown
@@ -396,7 +423,9 @@
 	[self setDownloadDelegate:nil];
 	[self removeFromSuperviewWithoutNeedingDisplay];
 	[controller release];
+	controller=nil;
 	[defaultWebPrefs release];
+	defaultWebPrefs=nil;
 	[super dealloc];
 }
 @end

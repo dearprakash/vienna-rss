@@ -23,7 +23,7 @@
 #import "StringExtensions.h"
 #import "AppController.h"
 #import "Preferences.h"
-#import "Message.h"
+#import "Article.h"
 #import "BrowserPane.h"
 #import "BitlyAPIHelper.h"
 #import "SearchMethod.h"
@@ -227,9 +227,8 @@
 	{
 		if ([[plugin valueForKey:@"Type"] isEqualToString:@"SearchEngine"])
 		{
-			SearchMethod * method = [[SearchMethod alloc] initWithDictionary:plugin];
+			SearchMethod * method = [[[SearchMethod alloc] initWithDictionary:plugin] autorelease];
 			[searchMethods addObject:method];
-			[method release];
 		}
 	}
 	return searchMethods;
@@ -300,8 +299,8 @@
  */
 -(BOOL)validateToolbarItem:(ToolbarItem *)toolbarItem
 {	
-	NSView<BaseView> * theView = [[[NSApp delegate] browserView] activeTabItemView];
-	Article * thisArticle = [[NSApp delegate] selectedArticle];
+	NSView<BaseView> * theView = [[APPCONTROLLER browserView] activeTabItemView];
+	Article * thisArticle = [APPCONTROLLER selectedArticle];
 	
 	if ([theView isKindOfClass:[BrowserPane class]])
 		return (([theView viewLink] != nil) && [NSApp isActive]);
@@ -337,7 +336,7 @@
 				return;
 			
 			// Get the view that the user is currently looking at...
-			NSView<BaseView> * theView = [[[NSApp delegate] browserView] activeTabItemView];
+			NSView<BaseView> * theView = [[APPCONTROLLER browserView] activeTabItemView];
 			
 			// ...and do the following in case the user is currently looking at a website.
 			if ([theView isKindOfClass:[BrowserPane class]])
@@ -355,7 +354,7 @@
 				}
 				else 
 				{
-					[urlString replaceString:@"$ArticleLink$" withString:[theView viewLink]];					
+					[urlString replaceString:@"$ArticleLink$" withString:[[theView viewLink] stringByAddingPercentEscapesUsingEncoding:NSUTF8StringEncoding]];
 				}
 
 			}
@@ -364,7 +363,7 @@
 			else
 			{
 				// We can only work on one article, so ignore selection range.
-				Article * currentMessage = [[NSApp delegate] selectedArticle];
+				Article * currentMessage = [APPCONTROLLER selectedArticle];
 				[urlString replaceString:@"$ArticleTitle$" withString: [currentMessage title]];
 				
 				// URL shortening again, as above...
@@ -374,12 +373,12 @@
 					NSString * shortURL = [bitlyHelper shortenURL:[currentMessage link]];
 					
 					// If URL shortening fails, we fall back to the long URL.
-					[urlString replaceString:@"$ArticleLink$" withString:(shortURL ? shortURL : [currentMessage link])];
+					[urlString replaceString:@"$ArticleLink$" withString:(shortURL ? shortURL : [[[currentMessage link] stringByAddingPercentEscapesUsingEncoding:NSUTF8StringEncoding] stringByAddingPercentEscapesUsingEncoding:NSUTF8StringEncoding])];
 					[bitlyHelper release];
 				}
 				else 
 				{
-					[urlString replaceString:@"$ArticleLink$" withString: [currentMessage link]];
+					[urlString replaceString:@"$ArticleLink$" withString: [[[currentMessage link] stringByAddingPercentEscapesUsingEncoding:NSUTF8StringEncoding] stringByAddingPercentEscapesUsingEncoding:NSUTF8StringEncoding]];
 				}
 			}
 						
@@ -387,7 +386,7 @@
 			{
 				NSURL * urlToLoad = cleanedUpAndEscapedUrlFromString(urlString);				
 				if (urlToLoad != nil)
-					[[NSApp delegate] createNewTab:urlToLoad inBackground:NO];
+					[APPCONTROLLER createNewTab:urlToLoad inBackground:NO];
 			}
 			else
 			{
@@ -407,13 +406,13 @@
 				return;
 
 			// Just run the script
-			[[NSApp delegate] runAppleScript:scriptFile];
+			[APPCONTROLLER runAppleScript:scriptFile];
 		}
 
 		else if ([itemType isEqualToString:@"BlogEditor"])
 		{
 			// This is a blog-editor plugin. Simply send the info to the application.
-			[[NSApp delegate] blogWithExternalEditor:[pluginItem objectForKey:@"BundleIdentifier"]];
+			[APPCONTROLLER blogWithExternalEditor:[pluginItem objectForKey:@"BundleIdentifier"]];
 		}
 	}
 }
@@ -424,6 +423,7 @@
 -(void)dealloc
 {
 	[allPlugins release];
+	allPlugins=nil;
 	[super dealloc];
 }
 @end

@@ -14,11 +14,14 @@
 
 #define PROGRESS_INDICATOR_LEFT_MARGIN	8
 #define PROGRESS_INDICATOR_DIMENSION_REGULAR 24
+#define DEFAULT_CELL_HEIGHT	150
+#define XPOS_IN_CELL	6
+#define YPOS_IN_CELL	2
 
 @implementation ArticleCellView
 
 @synthesize articleView;
-@synthesize inProgress, folderId;
+@synthesize inProgress, folderId, articleRow;
 
 #pragma mark -
 #pragma mark Init/Dealloc
@@ -27,7 +30,7 @@
 {
 	if((self = [super initWithReusableIdentifier:identifier]))
 	{
-		controller = (AppController *)[NSApp delegate];
+		controller = APPCONTROLLER;
 		articleView= [[ArticleView alloc] initWithFrame:frameRect];
 		// Make the list view the frame load and UI delegate for the web view
 		[articleView setUIDelegate:[[controller browserView] primaryTabItemView]];
@@ -43,8 +46,8 @@
 		[[articleView preferences] setStandardFontFamily:@"Arial"];
 		[[articleView preferences] setDefaultFontSize:16];
 
-		// Disable caching
-		[[articleView preferences] setUsesPageCache:NO];
+		// Enable caching
+		[[articleView preferences] setUsesPageCache:YES];
 		[articleView setMaintainsBackForwardList:NO];
 		[self setInProgress:NO];
 		progressIndicator = nil;
@@ -55,10 +58,31 @@
 -(void)dealloc
 {
 	[[NSNotificationCenter defaultCenter] removeObserver:[[controller browserView] primaryTabItemView] name:WebViewProgressFinishedNotification object:articleView];
+	[articleView setUIDelegate:nil];
+	[articleView setFrameLoadDelegate:nil];
+	[articleView stopLoading:self];
 	[articleView release], articleView=nil;
 	[progressIndicator release], progressIndicator=nil;
 
 	[super dealloc];
+}
+
+#pragma mark -
+#pragma mark Reusing Cells
+
+- (void)prepareForReuse
+{
+	//calculate the frame
+	NSRect newWebViewRect = NSMakeRect(XPOS_IN_CELL,
+							   YPOS_IN_CELL,
+							   NSWidth([self frame]) - XPOS_IN_CELL,
+							   DEFAULT_CELL_HEIGHT);
+	//set the new frame to the webview
+	[articleView stopLoading:self];
+	[articleView setFrame:newWebViewRect];
+	[self setInProgress:YES];
+	[articleView clearHTML];
+	[super prepareForReuse];
 }
 
 #pragma mark -
@@ -132,9 +156,21 @@
 
 }
 
+-(void)layoutSubviews
+{
+	//calculate the new frame
+	NSRect newWebViewRect = NSMakeRect(XPOS_IN_CELL,
+							   YPOS_IN_CELL,
+							   NSWidth([self frame]) - XPOS_IN_CELL,
+							   NSHeight([self frame]) -YPOS_IN_CELL);
+	//set the new frame to the webview
+	[articleView setFrame:newWebViewRect];
+	[super layoutSubviews];
+}
+
 - (BOOL)acceptsFirstResponder
 {
-	return YES;
+	return NO;
 };
 
 /* keyDown
@@ -144,6 +180,36 @@
 -(void)keyDown:(NSEvent *)theEvent
 {
 	[[[self listView] superview] keyDown:theEvent];
+}
+
+/* canMakeTextSmaller
+ */
+-(IBAction)canMakeTextSmaller
+{
+	[articleView canMakeTextSmaller];
+}
+
+/* canMakeTextLarger
+ */
+-(IBAction)canMakeTextLarger
+{
+	[articleView canMakeTextLarger];
+}
+
+/* makeTextSmaller
+ * Make webview text size smaller
+ */
+-(IBAction)makeTextSmaller:(id)sender
+{
+	[articleView makeTextSmaller:sender];
+}
+
+/* makeTextLarger
+ * Make webview text size larger
+ */
+-(IBAction)makeTextLarger:(id)sender
+{
+	[articleView makeTextLarger:sender];
 }
 
 @end

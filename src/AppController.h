@@ -29,6 +29,8 @@
 #import "PluginManager.h"
 #import <AppKit/AppKit.h>
 
+#define APPCONTROLLER (AppController *)[NSApp delegate]
+
 @class NewPreferencesController;
 @class FoldersTree;
 @class SmartFolder;
@@ -41,10 +43,11 @@
 @class EmptyTrashWarning;
 @class ClickableProgressIndicator;
 @class SearchPanel;
+@class BJRWindowWithToolbar;
 
-@interface AppController : NSObject <NSApplicationDelegate,GrowlApplicationBridgeDelegate,NSWindowDelegate,NSToolbarDelegate,NSSplitViewDelegate,NSMenuDelegate>
+@interface AppController : NSObject <NSApplicationDelegate, GrowlApplicationBridgeDelegate,NSWindowDelegate,NSToolbarDelegate,NSSplitViewDelegate,NSMenuDelegate>
 {
-	IBOutlet NSWindow * mainWindow;
+	IBOutlet BJRWindowWithToolbar * mainWindow;
 	IBOutlet ArticleController * articleController;
 	IBOutlet FoldersTree * foldersTree;
 	IBOutlet NSSplitView * splitView1;
@@ -78,7 +81,6 @@
 	NewPreferencesController * preferenceController;
 	DownloadWindow * downloadWindow;
 	SmartFolder * smartFolder;
-	NewSubscription * rssFeed;
 	NewGroupFolder * groupFolder;
 	EmptyTrashWarning * emptyTrashWarning;
 	SearchPanel * searchPanel;
@@ -98,7 +100,13 @@
 	NSMenuItem * scriptsMenuItem;
 	BOOL didCompleteInitialisation;
 	NSString * searchString;
+    
+    NSWindowController *_preferencesWindowController;
+    NewSubscription * _rssFeed;
 }
+
+@property (nonatomic, readonly) NSWindowController *preferencesWindowController;
+@property(nonatomic, retain) NewSubscription *rssFeed;
 
 // Menu action items
 -(IBAction)handleAbout:(id)sender;
@@ -111,6 +119,7 @@
 -(IBAction)searchUsingFilterField:(id)sender;
 -(IBAction)markAllRead:(id)sender;
 -(IBAction)markAllSubscriptionsRead:(id)sender;
+-(IBAction)markUnread:(id)sender;
 -(IBAction)markRead:(id)sender;
 -(IBAction)markFlagged:(id)sender;
 -(IBAction)renameFolder:(id)sender;
@@ -176,6 +185,7 @@
 -(IBAction)localPerformFindPanelAction:(id)sender;
 -(IBAction)keepFoldersArranged:(id)sender;
 
+
 // Public functions
 -(void)setStatusMessage:(NSString *)newStatusText persist:(BOOL)persistenceFlag;
 -(NSArray *)contextMenuItemsForElement:(NSDictionary *)element defaultMenuItems:(NSArray *)defaultMenuItems;
@@ -187,7 +197,7 @@
 -(void)openURLInDefaultBrowser:(NSURL *)url;
 -(void)handleRSSLink:(NSString *)linkPath;
 -(void)selectFolder:(int)folderId;
--(void)createNewSubscription:(NSString *)url underFolder:(NSInteger)parentId afterChild:(NSInteger)predecessorId;
+-(void)createNewSubscription:(NSString *)urlString underFolder:(NSInteger)parentId afterChild:(NSInteger)predecessorId;
 -(void)createNewGoogleReaderSubscription:(NSString *)url underFolder:(NSInteger)parentId withTitle:(NSString*)title afterChild:(NSInteger)predecessorId;
 -(void)markSelectedFoldersRead:(NSArray *)arrayOfFolders;
 -(void)doSafeInitialisation;

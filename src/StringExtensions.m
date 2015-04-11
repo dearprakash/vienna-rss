@@ -67,19 +67,15 @@
 			
 			// Now extract the source parameter
 			NSString * srcPath = [self substringWithRange:srcRange];
-			if (![srcPath hasPrefix:@"http"])
+			if (![srcPath hasPrefix:@"http:"] && ![srcPath hasPrefix:@"https:"] && ![srcPath hasPrefix:@"data:"])
 			{
-				NSString * escapedSrcPath = [srcPath stringByAddingPercentEscapesUsingEncoding:NSUTF8StringEncoding];
-				if (escapedSrcPath != nil)
-				{
-					NSURL * imgURL = [NSURL URLWithString:escapedSrcPath relativeToURL:imgBaseURL];
-					if (imgURL != nil)
-					{
-						srcPath = [imgURL absoluteString];
-						[self replaceCharactersInRange:srcRange withString:srcPath];
-						textLength = [self length];
-					}
-				}
+                NSURL * imgURL = [NSURL URLWithString:srcPath relativeToURL:imgBaseURL];
+                if (imgURL != nil)
+                {
+                    srcPath = [imgURL absoluteString];
+                    [self replaceCharactersInRange:srcRange withString:srcPath];
+                    textLength = [self length];
+                }
 			}
 			
 			// Start searching again from beyond the URL
@@ -125,19 +121,15 @@
 
 			// Now extract the source parameter
 			NSString * srcPath = [self substringWithRange:srcRange];
-			if (![srcPath hasPrefix:@"http"])
+			if (![srcPath hasPrefix:@"http:"] && ![srcPath hasPrefix:@"https:"] && ![srcPath hasPrefix:@"#"])
 			{
-				NSString * escapedSrcPath = [srcPath stringByAddingPercentEscapesUsingEncoding:NSUTF8StringEncoding];
-				if (escapedSrcPath != nil)
-				{
-					NSURL * anchorURL = [NSURL URLWithString:escapedSrcPath relativeToURL:anchorBaseURL];
-					if (anchorURL != nil)
-					{
-						srcPath = [anchorURL absoluteString];
-						[self replaceCharactersInRange:srcRange withString:srcPath];
-						textLength = [self length];
-					}
-				}
+                NSURL * anchorURL = [NSURL URLWithString:srcPath relativeToURL:anchorBaseURL];
+                if (anchorURL != nil)
+                {
+                    srcPath = [anchorURL absoluteString];
+                    [self replaceCharactersInRange:srcRange withString:srcPath];
+                    textLength = [self length];
+                }
 			}
 
 			// Start searching again from beyond the URL
@@ -183,19 +175,15 @@
 
 			// Now extract the source parameter
 			NSString * srcPath = [self substringWithRange:srcRange];
-			if (![srcPath hasPrefix:@"http"])
+			if (![srcPath hasPrefix:@"http:"] && ![srcPath hasPrefix:@"https:"])
 			{
-				NSString * escapedSrcPath = [srcPath stringByAddingPercentEscapesUsingEncoding:NSUTF8StringEncoding];
-				if (escapedSrcPath != nil)
-				{
-					NSURL * iframeURL = [NSURL URLWithString:escapedSrcPath relativeToURL:imgBaseURL];
-					if (iframeURL != nil)
-					{
-						srcPath = [iframeURL absoluteString];
-						[self replaceCharactersInRange:srcRange withString:srcPath];
-						textLength = [self length];
-					}
-				}
+                NSURL * iframeURL = [NSURL URLWithString:srcPath relativeToURL:imgBaseURL];
+                if (iframeURL != nil)
+                {
+                    srcPath = [iframeURL absoluteString];
+                    [self replaceCharactersInRange:srcRange withString:srcPath];
+                    textLength = [self length];
+                }
 			}
 
 			// Start searching again from beyond the URL
@@ -433,6 +421,20 @@ static NSMutableDictionary * entityMap = nil;
 	if (index <= beginning)
 		return self;
 	return [self substringWithRange:NSMakeRange(0, index)];
+}
+
+/* lastURLComponent
+ * Returns a string with the last URL component.
+ */
+-(NSString *)lastURLComponent
+{
+	int index = [self length] - 1;
+
+	while (index >= 0 && [self characterAtIndex:index] != '/')
+		--index;
+	if (index <= 0)
+		return self;
+	return [self substringWithRange:NSMakeRange(index+1, [self length] -1-index)];
 }
 
 /* stringByAppendingURLComponent
@@ -691,6 +693,7 @@ static NSMutableDictionary * entityMap = nil;
 -(NSString *)convertStringToValidPath
 {
 	NSMutableString * baseURLString = [NSMutableString stringWithString:self];
+    [baseURLString replaceOccurrencesOfString:@":" withString:@"_" options:NSLiteralSearch range:NSMakeRange(0, [baseURLString length])];
 	[baseURLString replaceOccurrencesOfString:@"." withString:@"_" options:NSLiteralSearch range:NSMakeRange(0, [baseURLString length])];
 	[baseURLString replaceOccurrencesOfString:@"/" withString:@"_" options:NSLiteralSearch range:NSMakeRange(0, [baseURLString length])];
 	[baseURLString replaceOccurrencesOfString:@"?" withString:@"_" options:NSLiteralSearch range:NSMakeRange(0, [baseURLString length])];

@@ -19,40 +19,38 @@
 //
 
 #import <Cocoa/Cocoa.h>
-#import "FMDatabase.h"
+#import "FMDB.h"
 #import "Folder.h"
 #import "Field.h"
 #import "Criteria.h"
 
 @interface Database : NSObject {
-	FMDatabase * sqlDatabase;
 	BOOL initializedfoldersDict;
 	BOOL initializedSmartfoldersDict;
 	BOOL readOnly;
-	int databaseVersion;
 	int countOfUnread;
-	NSThread * mainThread;
-	BOOL inTransaction;
-	Folder * trashFolder;
-	Folder * searchFolder;
 	NSString * searchString;
 	NSMutableArray * fieldsOrdered;
 	NSMutableDictionary * fieldsByName;
 	NSMutableDictionary * fieldsByTitle;
 	NSMutableDictionary * foldersDict;
 	NSMutableDictionary * smartfoldersDict;
+	Folder * trashFolder;
+	Folder * searchFolder;
+    FMDatabaseQueue *databaseQueue;
 }
 
+@property(nonatomic, retain) Folder * trashFolder;
+@property(nonatomic, retain) Folder * searchFolder;
+@property(nonatomic, retain) FMDatabaseQueue * databaseQueue;
+
 // General database functions
-+(Database *)sharedDatabase;
--(BOOL)initDatabase:(NSString *)databaseFileName;
++(instancetype)sharedManager;
 -(void)syncLastUpdate;
--(NSInteger)databaseVersion;
--(void)beginTransaction;
--(void)commitTransaction;
 -(void)compactDatabase;
 -(void)reindexDatabase;
 -(NSInteger)countOfUnread;
+-(NSInteger)databaseVersion;
 -(BOOL)readOnly;
 -(void)close;
 
@@ -73,19 +71,19 @@
 -(Folder *)folderFromName:(NSString *)wantedName;
 -(NSInteger)addFolder:(NSInteger)parentId afterChild:(NSInteger)predecessorId folderName:(NSString *)name type:(NSInteger)type canAppendIndex:(BOOL)canAppendIndex;
 -(BOOL)deleteFolder:(NSInteger)folderId;
--(BOOL)setFolderName:(NSInteger)folderId newName:(NSString *)newName;
--(BOOL)setFolderDescription:(NSInteger)folderId newDescription:(NSString *)newDescription;
--(BOOL)setFolderHomePage:(NSInteger)folderId newHomePage:(NSString *)newLink;
--(BOOL)setFolderFeedURL:(NSInteger)folderId newFeedURL:(NSString *)newFeedURL;
+-(BOOL)setName:(NSString *)newName forFolder:(NSInteger)folderId;
+-(BOOL)setDescription:(NSString *)newDescription forFolder:(NSInteger)folderId;
+-(BOOL)setHomePage:(NSString *)homePageURL forFolder:(NSInteger)folderId;
+-(BOOL)setFeedURL:(NSString *)feed_url forFolder:(NSInteger)folderId;
 -(BOOL)setFolderUsername:(NSInteger)folderId newUsername:(NSString *)name;
 -(void)purgeDeletedArticles;
 -(void)purgeArticlesOlderThanDays:(NSUInteger)daysToKeep;
 -(BOOL)markFolderRead:(NSInteger)folderId;
--(void)clearFolderFlag:(NSInteger)folderId flagToClear:(NSUInteger)flag;
--(void)setFolderFlag:(NSInteger)folderId flagToSet:(NSUInteger)flag;
+-(void)clearFlag:(NSUInteger)flag forFolder:(NSInteger)folderId;
+-(void)setFlag:(NSUInteger)flag forFolder:(NSInteger)folderId;
 -(void)setFolderUnreadCount:(Folder *)folder adjustment:(NSUInteger)adjustment;
--(void)setFolderLastUpdate:(NSInteger)folderId lastUpdate:(NSDate *)lastUpdate;
--(void)setFolderLastUpdateString:(NSInteger)folderId lastUpdateString:(NSString *)lastUpdateString;
+-(void)setLastUpdate:(NSDate *)lastUpdate forFolder:(NSInteger)folderId;
+-(void)setLastUpdateString:(NSString *)lastUpdateString forFolder:(NSInteger)folderId;
 -(BOOL)setParent:(NSInteger)newParentID forFolder:(NSInteger)folderId;
 -(BOOL)setFirstChild:(NSInteger)childId forFolder:(NSInteger)folderId;
 -(BOOL)setNextSibling:(NSUInteger)nextSiblingId forFolder:(NSInteger)folderId;
@@ -110,8 +108,8 @@
 
 // Article functions
 -(BOOL)createArticle:(NSInteger)folderID article:(Article *)article guidHistory:(NSArray *)guidHistory;
--(BOOL)deleteArticle:(NSInteger)folderId guid:(NSString *)guid;
--(NSArray *)arrayOfUnreadArticles:(NSInteger)folderId;
+-(BOOL)deleteArticleFromFolder:(NSInteger)folderId guid:(NSString *)guid;
+-(NSArray *)arrayOfUnreadArticlesRefs:(NSInteger)folderId;
 -(NSArray *)arrayOfArticles:(NSInteger)folderId filterString:(NSString *)filterString;
 -(void)markArticleRead:(NSInteger)folderId guid:(NSString *)guid isRead:(BOOL)isRead;
 -(void)markArticleFlagged:(NSInteger)folderId guid:(NSString *)guid isFlagged:(BOOL)isFlagged;

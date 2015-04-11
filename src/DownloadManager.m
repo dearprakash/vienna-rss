@@ -181,7 +181,6 @@ static DownloadManager * _sharedDownloadManager = nil;
 		else
 		{
 			[image retain];
-			[image setScalesWhenResized:YES];
 			[image setSize:NSMakeSize(32, 32)];
 		}
 	}
@@ -212,8 +211,11 @@ static DownloadManager * _sharedDownloadManager = nil;
 -(void)dealloc
 {
 	[filename release];
+	filename=nil;
 	[download release];
+	download=nil;
 	[image release];
+	image=nil;
 	[super dealloc];
 }
 @end
@@ -338,12 +340,11 @@ static DownloadManager * _sharedDownloadManager = nil;
 	NSURLDownload * theDownload = [[NSURLDownload alloc] initWithRequest:theRequest delegate:(id)self];
 	if (theDownload)
 	{
-		DownloadItem * newItem = [[DownloadItem alloc] init];
+		DownloadItem * newItem = [[DownloadItem new] autorelease];
 		[newItem setState:DOWNLOAD_INIT];
 		[newItem setDownload:theDownload];
 		[newItem setFilename:filename];
 		[downloadsList addObject:newItem];
-		[newItem release];
 
 		// The following line will stop us getting decideDestinationWithSuggestedFilename.
 		[theDownload setDestination:filename allowOverwrite:YES];
@@ -377,13 +378,14 @@ static DownloadManager * _sharedDownloadManager = nil;
 +(NSString *)fullDownloadPath:(NSString *)filename
 {
 	NSString * downloadPath = [[Preferences standardPreferences] downloadFolder];
+    NSString * decodedFilename = [filename stringByReplacingPercentEscapesUsingEncoding:NSUTF8StringEncoding];
 	NSFileManager * fileManager = [NSFileManager defaultManager];
 	BOOL isDir = YES;
 
 	if (![fileManager fileExistsAtPath:downloadPath isDirectory:&isDir] || !isDir)
 		downloadPath = @"~/Desktop";
 	
-	return [[downloadPath stringByExpandingTildeInPath] stringByAppendingPathComponent:filename];
+	return [[downloadPath stringByExpandingTildeInPath] stringByAppendingPathComponent:decodedFilename];
 }
 
 /* isFileDownloaded
@@ -392,16 +394,17 @@ static DownloadManager * _sharedDownloadManager = nil;
  */
 +(BOOL)isFileDownloaded:(NSString *)filename
 {
+    NSString * decodedFilename = [filename stringByReplacingPercentEscapesUsingEncoding:NSUTF8StringEncoding];
 	DownloadManager * downloadManager = [DownloadManager sharedInstance];
 	int count = [[downloadManager downloadsList] count];
 	int index;
 
-	NSString * firstFile = [filename stringByStandardizingPath];
+	NSString * firstFile = [decodedFilename stringByStandardizingPath];
 
 	for (index = 0; index < count; ++index)
 	{
 		DownloadItem * item = [[downloadManager downloadsList] objectAtIndex:index];
-		NSString * secondFile = [[item filename] stringByStandardizingPath];
+		NSString * secondFile = [decodedFilename stringByStandardizingPath];
 		
 		if ([firstFile compare:secondFile options:NSCaseInsensitiveSearch] == NSOrderedSame)
 		{
@@ -450,7 +453,7 @@ static DownloadManager * _sharedDownloadManager = nil;
 	[self notifyDownloadItemChange:theItem];
 
 	// If there's no download window visible, display one now.
-	[[NSApp delegate] conditionalShowDownloadsWindow:self];
+	[APPCONTROLLER conditionalShowDownloadsWindow:self];
 }
 
 /* downloadDidFinish
@@ -473,7 +476,7 @@ static DownloadManager * _sharedDownloadManager = nil;
 	[contextDict setValue:[NSNumber numberWithInt:MA_GrowlContext_DownloadCompleted] forKey:@"ContextType"];
 	[contextDict setValue:[theItem filename] forKey:@"ContextData"];
 	
-	[[NSApp delegate] growlNotify:contextDict
+	[APPCONTROLLER growlNotify:contextDict
 							title:NSLocalizedString(@"Download completed", nil)
 					  description:[NSString stringWithFormat:NSLocalizedString(@"File %@ downloaded", nil), filename]
 				 notificationName:NSLocalizedString(@"Growl download completed", nil)];
@@ -504,7 +507,7 @@ static DownloadManager * _sharedDownloadManager = nil;
 	[contextDict setValue:[NSNumber numberWithInt:MA_GrowlContext_DownloadFailed] forKey:@"ContextType"];
 	[contextDict setValue:[theItem filename] forKey:@"ContextData"];
 	
-	[[NSApp delegate] growlNotify:contextDict
+	[APPCONTROLLER growlNotify:contextDict
 							title:NSLocalizedString(@"Download failed", nil)
 					  description:[NSString stringWithFormat:NSLocalizedString(@"File %@ failed to download", nil), filename]
 				 notificationName:NSLocalizedString(@"Growl download failed", nil)];
@@ -588,6 +591,7 @@ static DownloadManager * _sharedDownloadManager = nil;
 -(void)dealloc
 {
 	[downloadsList release];
+	downloadsList=nil;
 	[super dealloc];
 }
 @end

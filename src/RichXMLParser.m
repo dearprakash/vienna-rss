@@ -201,12 +201,19 @@
 -(void)dealloc
 {
 	[guid release];
+	guid=nil;
 	[title release];
+	title=nil;
 	[description release];
+	description=nil;
 	[author release];
+	author=nil;
 	[date release];
+	date=nil;
 	[link release];
+	link=nil;
 	[enclosure release];
+	enclosure=nil;
 	[super dealloc];
 }
 @end
@@ -254,7 +261,7 @@
 -(BOOL)parseRichXML:(NSData *)xmlData
 {
 	BOOL success = NO;
-	NS_DURING
+	@try {
 	NSData * parsedXmlData = [self preFlightValidation:xmlData];
 	if (parsedXmlData && [self setData:parsedXmlData])
 	{
@@ -272,9 +279,10 @@
 		else if ((subtree = [self treeByName:@"feed"]) != nil)
 			success = [self initAtomFeed:subtree];
 	}
-	NS_HANDLER
+	}
+	@catch (NSException *error) {
 		success = NO;
-	NS_ENDHANDLER
+	}
 	return success;
 }
 
@@ -286,7 +294,7 @@
 +(BOOL)extractFeeds:(NSData *)xmlData toArray:(NSMutableArray *)linkArray
 {
 	BOOL success = NO;
-	NS_DURING
+	@try {
 	NSArray * arrayOfTags = [XMLTag parserFromData:xmlData];
 	if (arrayOfTags != nil)
 	{
@@ -325,9 +333,10 @@
 			success = [linkArray count] > 0;
 		}
 	}
-	NS_HANDLER
-	success = NO;
-	NS_ENDHANDLER
+	}
+	@catch (NSException *error) {
+		success = NO;
+	}
 	return success;
 }
 
@@ -551,14 +560,14 @@
 		NSString * nodeName = [subTree nodeName];
 
 		// Parse title
-		if ([nodeName isEqualToString:@"title"])
+		if ([nodeName isEqualToString:@"title"] || [nodeName isEqualToString:@"rss:title"])
 		{
 			[self setTitle:[[subTree valueOfElement] stringByUnescapingExtendedCharacters]];
 			continue;
 		}
 
 		// Parse items group which dictates the sequence of the articles.
-		if ([nodeName isEqualToString:@"items"])
+		if ([nodeName isEqualToString:@"items"] || [nodeName isEqualToString:@"rss:items"])
 		{
 			XMLParser * seqTree = [subTree treeByName:@"rdf:Seq"];
 			if (seqTree != nil)
@@ -566,37 +575,21 @@
 		}
 
 		// Parse description
-		if ([nodeName isEqualToString:@"description"])
+		if ([nodeName isEqualToString:@"description"] || [nodeName isEqualToString:@"rss:description"])
 		{
 			[self setDescription:[subTree valueOfElement]];
 			continue;
 		}			
 		
 		// Parse link
-		if ([nodeName isEqualToString:@"link"])
+		if ([nodeName isEqualToString:@"link"] || [nodeName isEqualToString:@"rss:link"])
 		{
 			[self setLink:[[subTree valueOfElement] stringByUnescapingExtendedCharacters]];
 			continue;
 		}			
 		
 		// Parse the date when this feed was last updated
-		if ([nodeName isEqualToString:@"lastBuildDate"])
-		{
-			NSString * dateString = [subTree valueOfElement];
-			[self setLastModified:[XMLParser parseXMLDate:dateString]];
-			continue;
-		}
-		
-		// Parse item date
-		if ([nodeName isEqualToString:@"dc:date"])
-		{
-			NSString * dateString = [subTree valueOfElement];
-			[self setLastModified:[XMLParser parseXMLDate:dateString]];
-			continue;
-		}
-		
-		// Parse item date
-		if ([nodeName isEqualToString:@"pubDate"])
+		if ([nodeName isEqualToString:@"lastBuildDate"] || [nodeName isEqualToString:@"pubDate"] || [nodeName isEqualToString:@"dc:date"])
 		{
 			NSString * dateString = [subTree valueOfElement];
 			[self setLastModified:[XMLParser parseXMLDate:dateString]];
@@ -653,9 +646,9 @@
 		
 		// Parse a single item to construct a FeedItem object which is appended to
 		// the items array we maintain.
-		if ([nodeName isEqualToString:@"item"])
+		if ([nodeName isEqualToString:@"item"] || [nodeName isEqualToString:@"rss:item"])
 		{
-			FeedItem * newItem = [[FeedItem alloc] init];
+			FeedItem * newItem = [[FeedItem new] autorelease];
 			CFIndex itemCount = [subTree countOfChildren];
 			NSMutableString * articleBody = nil;
 			BOOL hasDetailedContent = NO;
@@ -671,14 +664,14 @@
 				NSString * itemNodeName = [subItemTree nodeName];
 
 				// Parse item title
-				if ([itemNodeName isEqualToString:@"title"])
+				if ([itemNodeName isEqualToString:@"title"] || [itemNodeName isEqualToString:@"rss:title"])
 				{
 					[newItem setTitle:[[subItemTree valueOfElement] summaryTextFromHTML]];
 					continue;
 				}
 				
 				// Parse item description
-				if ([itemNodeName isEqualToString:@"description"] && !hasDetailedContent)
+				if (([itemNodeName isEqualToString:@"description"] || [itemNodeName isEqualToString:@"rss:description"]) && !hasDetailedContent)
 				{
 					articleBody = [[[NSMutableString alloc] initWithString:[subItemTree valueOfElement]] autorelease];
 					continue;
@@ -687,7 +680,7 @@
 				// Parse GUID. The GUID may optionally have a permaLink attribute
 				// in which case this is also the article link unless overridden by
 				// an explicit link tag.
-				if ([itemNodeName isEqualToString:@"guid"])
+				if ([itemNodeName isEqualToString:@"guid"] || [itemNodeName isEqualToString:@"rss:guid"])
 				{
 					NSString * permaLink = [subItemTree valueOfAttribute:@"isPermaLink"];
 					if (permaLink && [permaLink isEqualToString:@"true"] && !hasLink)
@@ -705,22 +698,27 @@
 					continue;
 				}
 				
-				// Parse item author
-				if ([itemNodeName isEqualToString:@"author"])
+                // Parse item author
+				if ([itemNodeName isEqualToString:@"author"] || [itemNodeName isEqualToString:@"dc:creator"] || [itemNodeName isEqualToString:@"rss:author"])
 				{
-					[newItem setAuthor:[subItemTree valueOfElement]];
-					continue;
-				}
-				
-				// Parse item author
-				if ([itemNodeName isEqualToString:@"dc:creator"])
-				{
-					[newItem setAuthor:[subItemTree valueOfElement]];
-					continue;
+					NSString *authorName = [subItemTree valueOfElement];
+                    
+                    // the author is in the feed's entry
+                    if (authorName != nil) {
+                        // if we currently have a string set as the author then append the new author name
+                        if ([[newItem author] length] > 0) {
+                            [newItem setAuthor:[NSString stringWithFormat:NSLocalizedString(@"%@, %@", @"{existing authors},{new author name}"), [newItem author], authorName]];
+                        }
+                        // else we currently don't have an author set, so set it to the first author
+                        else {
+                            [newItem setAuthor:authorName];
+                        }
+                    }
+                    continue;
 				}
 				
 				// Parse item date
-				if ([itemNodeName isEqualToString:@"dc:date"])
+				if ([itemNodeName isEqualToString:@"dc:date"] || [itemNodeName isEqualToString:@"pubDate"])
 				{
 					NSString * dateString = [subItemTree valueOfElement];
 					[newItem setDate:[XMLParser parseXMLDate:dateString]];
@@ -728,18 +726,10 @@
 				}
 				
 				// Parse item link
-				if ([itemNodeName isEqualToString:@"link"])
+				if ([itemNodeName isEqualToString:@"link"] || [itemNodeName isEqualToString:@"rss:link"])
 				{
 					[newItem setLink:[[subItemTree valueOfElement] stringByUnescapingExtendedCharacters]];
 					hasLink = YES;
-					continue;
-				}
-				
-				// Parse item date
-				if ([itemNodeName isEqualToString:@"pubDate"])
-				{
-					NSString * dateString = [subItemTree valueOfElement];
-					[newItem setDate:[XMLParser parseXMLDate:dateString]];
 					continue;
 				}
 				
@@ -772,22 +762,9 @@
 				[items addObject:newItem];
 			else
 				[items insertObject:newItem atIndex:indexOfItem];
-			[newItem release];
 		}
 	}
 
-	// Now scan the array and set the article date if it is missing. We'll use the
-	// last modified date of the feed and set each article to be 1 second older than the
-	// previous one. So the array is effectively newest first.
-	NSDate * itemDate = [self lastModified];
-	if (itemDate == nil)
-		itemDate = [NSDate date];
-	for (FeedItem * anItem in items)
-	{
-		if ([anItem date] == nil)
-			[anItem setDate:itemDate];
-		itemDate = [itemDate dateByAddingTimeInterval:-1.0];
-	}
 	return success;
 }
 
@@ -893,8 +870,7 @@
 		// the items array we maintain.
 		if ([nodeName isEqualToString:@"entry"])
 		{
-			FeedItem * newItem = [[FeedItem alloc] init];
-			[newItem setAuthor:defaultAuthor];
+			FeedItem * newItem = [[FeedItem new] autorelease];
 			CFIndex itemCount = [subTree countOfChildren];
 			NSMutableString * articleBody = nil;
 			CFIndex itemIndex;
@@ -941,17 +917,27 @@
 				if ([itemNodeName isEqualToString:@"author"])
 				{
 					NSString * authorName = [[subItemTree treeByName:@"name"] valueOfElement];
-					if (authorName == nil)
+					if (authorName == nil) {
 						authorName = [[subItemTree treeByName:@"email"] valueOfElement];
-					if (authorName != nil)
-						[newItem setAuthor:authorName];
+                    }
+                    // the author is in the feed's entry
+					if (authorName != nil) {
+						// if we currently have a string set as the author then append the new author name
+                        if ([[newItem author] length] > 0) {
+                            [newItem setAuthor:[NSString stringWithFormat:NSLocalizedString(@"%@, %@", @"{existing authors},{new author name}"), [newItem author], authorName]];
+                        }
+                        // else we currently don't have an author set, so set it to the first author
+                        else {
+                            [newItem setAuthor:authorName];
+                        }
+                    }
 					continue;
 				}
 				
 				// Parse item link
 				if ([itemNodeName isEqualToString:@"link"])
 				{
-					if ([[subItemTree valueOfAttribute:@"rel"] isEqualToString:@"enclosure"])
+					if ([[subItemTree valueOfAttribute:@"rel"] isEqualToString:@"enclosure"] || [[subItemTree valueOfAttribute:@"rel"] isEqualToString:@"http://opds-spec.org/acquisition"])
 					{
 						NSString * theLink = [[subItemTree valueOfAttribute:@"href"] stringByUnescapingExtendedCharacters];
 						if (theLink != nil)
@@ -1023,6 +1009,10 @@
 				}
 			}
 
+			// if we didn't find an author, set it to the default one
+			if ([[newItem author] isEqualToString:@""])
+				[newItem setAuthor:defaultAuthor];
+
 			// Do relative IMG, IFRAME and A tags fixup
 			[articleBody fixupRelativeImgTags:entryBase];
 			[articleBody fixupRelativeIframeTags:entryBase];
@@ -1032,7 +1022,6 @@
 			// Derive any missing title
 			[self ensureTitle:newItem];
 			[items addObject:newItem];
-			[newItem release];
 		}
 	}
 	
@@ -1139,11 +1128,17 @@
 -(void)dealloc
 {
 	[orderArray release];
+	orderArray=nil;
 	[title release];
+	title=nil;
 	[description release];
+	description=nil;
 	[lastModified release];
+	lastModified=nil;
 	[link release];
+	link=nil;
 	[items release];
+	items=nil;
 	[super dealloc];
 }
 @end

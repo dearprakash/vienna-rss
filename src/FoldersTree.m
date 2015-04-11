@@ -92,6 +92,7 @@
 
 	// Folder image
 	folderErrorImage = [NSImage imageNamed:@"folderError.tiff"];
+    folderErrorImage.accessibilityDescription = NSLocalizedString(@"Error", nil);
 	refreshProgressImage = [NSImage imageNamed:@"refreshProgress.tiff"];
 	
 	// Create and set whatever font we're using for the folders
@@ -100,7 +101,7 @@
 	// Set background colour
 	[outlineView setBackgroundColor:[NSColor colorWithCalibratedRed:0.84 green:0.87 blue:0.90 alpha:1.00]];
 		
-	// Allow double-click a node to edit the node
+	// Allow a second click in a node to edit the node
 	[outlineView setAction:@selector(handleSingleClick:)];
 	[outlineView setDoubleAction:@selector(handleDoubleClick:)];
 	[outlineView setTarget:self];
@@ -118,6 +119,8 @@
 	
 	// Make sure selected row is visible
 	[outlineView scrollRowToVisible:[outlineView selectedRow]];
+
+    [outlineView accessibilitySetOverrideValue:NSLocalizedString(@"Folders", nil) forAttribute:NSAccessibilityDescriptionAttribute];
 }
 
 /* setOutlineViewBackgroundColor
@@ -138,7 +141,7 @@
 	[outlineView setEnableTooltips:YES];
 	
 	// Set the menu for the popup button
-	[outlineView setMenu:[[NSApp delegate] folderMenu]];
+	[outlineView setMenu:[APPCONTROLLER folderMenu]];
 	
 	blockSelectionHandler = YES;
 	[self reloadDatabase:[[Preferences standardPreferences] arrayForKey:MAPref_FolderStates]];
@@ -187,7 +190,7 @@
 	cellFont = [[NSFont fontWithName:[prefs folderListFont] size:[prefs folderListFontSize]] retain];
 	boldCellFont = [[[NSFontManager sharedFontManager] convertWeight:YES ofFont:cellFont] retain];
 
-	height = [[[NSApp delegate] layoutManager] defaultLineHeightForFont:boldCellFont];
+	height = [[APPCONTROLLER layoutManager] defaultLineHeightForFont:boldCellFont];
 	[outlineView setRowHeight:height + 5];
 	[outlineView setIntercellSpacing:NSMakeSize(10, 2)];
 }
@@ -198,11 +201,11 @@
 -(void)reloadDatabase:(NSArray *)stateArray
 {
 	[rootNode removeChildren];
-	if (![self loadTree:[[Database sharedDatabase] arrayOfFolders:MA_Root_Folder] rootNode:rootNode])
+	if (![self loadTree:[[Database sharedManager] arrayOfFolders:MA_Root_Folder] rootNode:rootNode])
 	{
 		[[Preferences standardPreferences] setFoldersTreeSortMethod:MA_FolderSort_ByName];
 		[rootNode removeChildren];
-		[self loadTree:[[Database sharedDatabase] arrayOfFolders:MA_Root_Folder] rootNode:rootNode];
+		[self loadTree:[[Database sharedManager] arrayOfFolders:MA_Root_Folder] rootNode:rootNode];
 	}
 	[outlineView reloadData];
 	[self unarchiveState:stateArray];
@@ -234,12 +237,11 @@
 
 		if (isItemExpanded || isItemSelected)
 		{
-			NSDictionary * newDict = [[NSMutableDictionary alloc] init];
+			NSDictionary * newDict = [NSMutableDictionary dictionary];
 			[newDict setValue:[NSNumber numberWithInt:[node nodeId]] forKey:@"NodeID"];
 			[newDict setValue:[NSNumber numberWithBool:isItemExpanded] forKey:@"ExpandedState"];
 			[newDict setValue:[NSNumber numberWithBool:isItemSelected] forKey:@"SelectedState"];
 			[archiveArray addObject:newDict];
-			[newDict release];
 		}
 	}
 	return archiveArray;
@@ -286,7 +288,7 @@
 		for (folder in listOfFolders)
 		{
 			int itemId = [folder itemId];
-			NSArray * listOfSubFolders = [[Database sharedDatabase] arrayOfFolders:itemId];
+			NSArray * listOfSubFolders = [[Database sharedManager] arrayOfFolders:itemId];
 			int count = [listOfSubFolders count];
 			TreeNode * subNode;
 
@@ -301,7 +303,7 @@
 	{
 		NSArray * listOfFolderIds = [listOfFolders valueForKey:@"itemId"];
 		NSUInteger index = 0;
-		NSInteger nextChildId = (node == rootNode) ? [[Database sharedDatabase] firstFolderId] : [[node folder] firstChildId];
+		NSInteger nextChildId = (node == rootNode) ? [[Database sharedManager] firstFolderId] : [[node folder] firstChildId];
 		while (nextChildId > 0)
 		{
 			NSUInteger  listIndex = [listOfFolderIds indexOfObject:[NSNumber numberWithInt:nextChildId]];
@@ -311,7 +313,7 @@
 				return NO;
 			}
 			folder = [listOfFolders objectAtIndex:listIndex];
-			NSArray * listOfSubFolders = [[Database sharedDatabase] arrayOfFolders:nextChildId];
+			NSArray * listOfSubFolders = [[Database sharedManager] arrayOfFolders:nextChildId];
 			NSUInteger count = [listOfSubFolders count];
 			TreeNode * subNode;
 			
@@ -415,8 +417,8 @@
 		TreeNode * node = [outlineView itemAtRow:row];
 		if (node != nil)
 		{
-			Folder * folder = [[Database sharedDatabase] folderFromID:[node nodeId]];
-			return folder && !IsSearchFolder(folder) && !IsTrashFolder(folder) && ![[Database sharedDatabase] readOnly] && [[outlineView window] isVisible];
+			Folder * folder = [[Database sharedManager] folderFromID:[node nodeId]];
+			return folder && !IsSearchFolder(folder) && !IsTrashFolder(folder) && ![[Database sharedManager] readOnly] && [[outlineView window] isVisible];
 		}
 	}
 	return NO;
@@ -534,7 +536,7 @@
  */
 -(int)groupParentSelection
 {
-	Folder * folder = [[Database sharedDatabase] folderFromID:[self actualSelection]];
+	Folder * folder = [[Database sharedManager] folderFromID:[self actualSelection]];
 	return folder ? ((IsGroupFolder(folder)) ? [folder itemId] : [folder parentId]) : MA_Root_Folder;
 }
 
@@ -590,26 +592,29 @@
  */
 -(void)setManualSortOrderForNode:(TreeNode *)node
 {
-	if (node == nil)
+    if (node == nil) {
 		return;
-	Database * db = [Database sharedDatabase];
+    }
 	int folderId = [node nodeId];
+    Database *dbManager = [Database sharedManager];
 	
 	int count = [node countOfChildren];
 	if (count > 0)
 	{
-		[db setFirstChild:[[node childByIndex:0] nodeId] forFolder:folderId];
+		
+        [dbManager setFirstChild:[[node childByIndex:0] nodeId] forFolder:folderId];
 		[self setManualSortOrderForNode:[node childByIndex:0]];
 		int index;
 		for (index = 1; index < count; ++index)
 		{
-			[db setNextSibling:[[node childByIndex:index] nodeId] forFolder:[[node childByIndex:index - 1] nodeId]];
+			[dbManager setNextSibling:[[node childByIndex:index] nodeId] forFolder:[[node childByIndex:index - 1] nodeId]];
 			[self setManualSortOrderForNode:[node childByIndex:index]];
 		}
-		[db setNextSibling:0 forFolder:[[node childByIndex:index - 1] nodeId]];
+		[dbManager setNextSibling:0 forFolder:[[node childByIndex:index - 1] nodeId]];
 	}
-	else
-		[db setFirstChild:0 forFolder:folderId];
+    else {
+		[dbManager setFirstChild:0 forFolder:folderId];
+    }
 }
 
 /* handleAutoSortFoldersTreeChange
@@ -621,9 +626,7 @@
 	
 	if ([[Preferences standardPreferences] foldersTreeSortMethod] == MA_FolderSort_Manual)
 	{
-		[[Database sharedDatabase] beginTransaction];
-		[self setManualSortOrderForNode:rootNode];
-		[[Database sharedDatabase] commitTransaction];
+        [self setManualSortOrderForNode:rootNode];
 	}
 	
 	blockSelectionHandler = YES;
@@ -669,7 +672,7 @@
 	{
 		NSString * urlString = [[node folder] homePage];
 		if (urlString && ![urlString isBlank])
-			[[NSApp delegate] openURLFromString:urlString inPreferredBrowser:YES];
+			[APPCONTROLLER openURLFromString:urlString inPreferredBrowser:YES];
 	}
 	else if (IsSmartFolder([node folder]))
 	{
@@ -873,7 +876,7 @@
  * Returns the actual string that is displayed in the cell. Folders that have child folders with unread
  * articles show the aggregate unread article count.
  */
--(id)outlineView:(NSOutlineView *)outlineView objectValueForTableColumn:(NSTableColumn *)tableColumn byItem:(id)item
+-(id)outlineView:(NSOutlineView *)olv objectValueForTableColumn:(NSTableColumn *)tableColumn byItem:(id)item
 {
 	TreeNode * node = (TreeNode *)item;
 	if (node == nil)
@@ -887,8 +890,22 @@
 		info = [[NSDictionary alloc] initWithObjectsAndKeys:style, NSParagraphStyleAttributeName, nil];
 		[style release];
 	}
+
+	Folder * folder = [node folder];
+	int rowIndex = [olv rowForItem:item];
+	NSMutableDictionary * myInfo = [NSMutableDictionary dictionaryWithDictionary:info];
+	// Set the colour of the text in the cell : default is blackColor
+	if (IsUnsubscribed(folder))
+		[myInfo setObject:[NSColor grayColor] forKey:NSForegroundColorAttributeName];
+	else if ([olv selectedRow] == rowIndex && [olv editedRow] != rowIndex)
+		[myInfo setObject:[NSColor whiteColor] forKey:NSForegroundColorAttributeName];
+	// Set the font
+	if ([folder unreadCount] ||  ([folder childUnreadCount] && ![olv isItemExpanded:item]))
+		[myInfo setObject:boldCellFont forKey:NSFontAttributeName];
+	else
+		[myInfo setObject:cellFont forKey:NSFontAttributeName];
 	
-	return [[[NSAttributedString alloc] initWithString:[node nodeName] attributes:info] autorelease];
+	return [[[NSAttributedString alloc] initWithString:[node nodeName] attributes:myInfo] autorelease];
 }
 
 /* willDisplayCell
@@ -903,22 +920,6 @@
 		TreeNode * node = (TreeNode *)item;
 		Folder * folder = [node folder];
 		ImageAndTextCell * realCell = (ImageAndTextCell *)cell;
-
-		// Set the colour of the text in the cell
-		int rowIndex = [olv rowForItem:item];
-		NSColor * textColor;
-
-		if (IsUnsubscribed(folder))
-			textColor = [NSColor grayColor];
-		else if ([olv editedRow] == rowIndex)
-			textColor = [NSColor blackColor];
-		else if ([olv selectedRow] == rowIndex)
-			textColor = [NSColor whiteColor];
-		else
-			textColor = [NSColor blackColor];
-		[realCell setTextColor:textColor];
-
-		[realCell setItem:item];
 
 		// Use the auxiliary position of the feed item to show
 		// the refresh icon if the feed is being refreshed, or an
@@ -942,29 +943,27 @@
 		if (IsSmartFolder(folder))  // Because if the search results contain unread articles we don't want the smart folder name to be bold.
 		{
 			[realCell clearCount];
-			[realCell setFont:cellFont];
 		}
 		else if ([folder unreadCount])
 		{
-			[realCell setFont:boldCellFont];
 			[realCell setCount:[folder unreadCount]];
 			[realCell setCountBackgroundColour:[NSColor colorForControlTint:[NSColor currentControlTint]]];
 		}
 		else if ([folder childUnreadCount] && ![olv isItemExpanded:item])
 		{
-			[realCell setFont:boldCellFont];
 			[realCell setCount:[folder childUnreadCount]];
 			[realCell setCountBackgroundColour:[NSColor colorForControlTint:[NSColor currentControlTint]]];
 		}
 		else
 		{
 			[realCell clearCount];
-			[realCell setFont:cellFont];
 		}
 
 		// Only show folder images if the user prefers them.
 		Preferences * prefs = [Preferences standardPreferences];
 		[realCell setImage:([prefs showFolderImages] ? [folder image] : [folder standardImage])];
+
+		[realCell setItem:item];
 	}
 }
 
@@ -1030,7 +1029,7 @@
 -(void)enableFoldersRenamingAfterDelay
 {
 	canRenameFolders = NO;
-	[NSTimer scheduledTimerWithTimeInterval:0.9 target:self selector:@selector(enableFoldersRenaming:) userInfo:nil repeats:NO];
+	[NSTimer scheduledTimerWithTimeInterval:[NSEvent doubleClickInterval] target:self selector:@selector(enableFoldersRenaming:) userInfo:nil repeats:NO];
 }
 
 /* outlineViewWillBecomeFirstResponder
@@ -1062,18 +1061,18 @@
 	
 	// Remove the "☁️ " symbols on Open Reader feeds
 	if (IsGoogleReaderFolder(folder) && [newName hasPrefix:@"☁️ "]) {
-		NSString *tmpName = [newName substringFromIndex:2];
+		NSString *tmpName = [newName substringFromIndex:3];
 		newName = tmpName;
 	}
 	
 	if (![[folder name] isEqualToString:newName])
 	{
-		Database * db = [Database sharedDatabase];
-		if ([db folderFromName:newName] != nil)
+		Database * dbManager = [Database sharedManager];
+		if ([dbManager folderFromName:newName] != nil)
 			runOKAlertPanel(NSLocalizedString(@"Cannot rename folder", nil), NSLocalizedString(@"A folder with that name already exists", nil));
 		else
         {
-			[db setFolderName:[folder itemId] newName:newName];
+            [dbManager setName:newName forFolder:folder.itemId];
         }
 	}
 }
@@ -1156,13 +1155,12 @@
 		{
 			NSString * feedURL = [folder feedURL];
 			
-			NSMutableDictionary * dict = [[NSMutableDictionary alloc] init];
+			NSMutableDictionary * dict = [NSMutableDictionary dictionary];
 			[dict setValue:[folder name] forKey:@"sourceName"];
 			[dict setValue:[folder description] forKey:@"sourceDescription"];
 			[dict setValue:feedURL forKey:@"sourceRSSURL"];
 			[dict setValue:[folder homePage] forKey:@"sourceHomeURL"];
 			[externalDragData addObject:dict];
-			[dict release];
 
 			[stringDragData appendString:feedURL];
 			[stringDragData appendString:@"\n"];
@@ -1206,7 +1204,7 @@
 {
 	NSAssert(([array count] % 3) == 0, @"Incorrect number of items in array passed to moveFolders");
 	int count = [array count];
-	int index = 0;
+	__block int index = 0;
 
 	// Need to create a running undo array
 	NSMutableArray * undoArray = [[NSMutableArray alloc] initWithCapacity:count];
@@ -1214,16 +1212,15 @@
 	// Internal drag and drop so we're just changing the parent IDs around. One thing
 	// we have to watch for is to make sure that we don't re-parent to a subordinate
 	// folder.
-	Database * db = [Database sharedDatabase];
+	Database * dbManager = [Database sharedManager];
 	BOOL autoSort = [[Preferences standardPreferences] foldersTreeSortMethod] != MA_FolderSort_Manual;
 
-	[db beginTransaction];
 	while (index < count)
 	{
 		int folderId = [[array objectAtIndex:index++] intValue];
 		int newParentId = [[array objectAtIndex:index++] intValue];
 		int newPredecessorId = [[array objectAtIndex:index++] intValue];
-		Folder * folder = [db folderFromID:folderId];
+		Folder * folder = [dbManager folderFromID:folderId];
 		int oldParentId = [folder parentId];
 		
 		TreeNode * node = [rootNode nodeFromID:folderId];
@@ -1239,29 +1236,33 @@
 		if (newParentId == oldParentId)
 		{
 			// With automatic sorting, moving under the same parent is impossible.
-			if (autoSort)
+            if (autoSort) {
 				continue;
+            }
 			// No need to move if destination is the same as origin.
-			if (newPredecessorId == oldPredecessorId)
+            if (newPredecessorId == oldPredecessorId) {
 				continue;
+            }
 			// Adjust the index for the removal of the old child.
-			if (newChildIndex > oldChildIndex)
-				--newChildIndex;
+            if (newChildIndex > oldChildIndex) {
+                --newChildIndex;
+            }
+				
 		}
 		else
 		{
 			if (![newParent canHaveChildren])
 				[newParent setCanHaveChildren:YES];
-			if ([db setParent:newParentId forFolder:folderId])
+			if ([dbManager setParent:newParentId forFolder:folderId])
 			{
 				if (IsGoogleReaderFolder(folder))
 				{
 					GoogleReader * myGoogle = [GoogleReader sharedManager];
 					// remove old label
-					NSString * folderName = [[db folderFromID:oldParentId] name];
+					NSString * folderName = [[dbManager folderFromID:oldParentId] name];
 					[myGoogle setFolderName:folderName forFeed:[folder feedURL] set:FALSE];
 					// add new label
-					folderName = [[db folderFromID:newParentId] name];
+					folderName = [[dbManager folderFromID:newParentId] name];
 					[myGoogle setFolderName:folderName forFeed:[folder feedURL] set:TRUE];
 				}
 			}
@@ -1273,12 +1274,12 @@
 		{
 			if (oldPredecessorId > 0)
 			{
-				if (![db setNextSibling:[folder nextSiblingId] forFolder:oldPredecessorId])
+				if (![dbManager setNextSibling:[folder nextSiblingId] forFolder:oldPredecessorId])
 					continue;
 			}
 			else
 			{
-				if (![db setFirstChild:[folder nextSiblingId] forFolder:oldParentId])
+				if (![dbManager setFirstChild:[folder nextSiblingId] forFolder:oldParentId])
 					continue;
 			}
 		}
@@ -1297,20 +1298,21 @@
 		{
 			if (newPredecessorId > 0)
 			{
-				if (![db setNextSibling:[[db folderFromID:newPredecessorId] nextSiblingId] forFolder:folderId])
+				if (![dbManager setNextSibling:[[dbManager folderFromID:newPredecessorId] nextSiblingId]
+                                     forFolder:folderId]) {
 					continue;
-				[db setNextSibling:folderId forFolder:newPredecessorId];
+                }
+				[dbManager setNextSibling:folderId forFolder:newPredecessorId];
 			}
 			else
 			{
-				int oldFirstChildId = (newParent == rootNode) ? [db firstFolderId] : [[newParent folder] firstChildId];
-				if (![db setNextSibling:oldFirstChildId forFolder:folderId])
+				int oldFirstChildId = (newParent == rootNode) ? [dbManager firstFolderId] : [[newParent folder] firstChildId];
+				if (![dbManager setNextSibling:oldFirstChildId forFolder:folderId])
 					continue;
-				[db setFirstChild:folderId forFolder:newParentId];
+				[dbManager setFirstChild:folderId forFolder:newParentId];
 			}
 		}
 	}
-	[db commitTransaction];
 	
 	// If undo array is empty, then nothing has been moved.
 	if ([undoArray count] == 0u)
@@ -1360,9 +1362,10 @@
 /* acceptDrop
  * Accept a drop on or between nodes either from within the folder view or from outside.
  */
--(BOOL)outlineView:(NSOutlineView *)olv acceptDrop:(id <NSDraggingInfo>)info item:(id)targetItem childIndex:(int)childIndex
+-(BOOL)outlineView:(NSOutlineView *)olv acceptDrop:(id <NSDraggingInfo>)info item:(id)targetItem childIndex:(int)child
 { 
-	NSPasteboard * pb = [info draggingPasteboard]; 
+	__block int childIndex = child;
+	NSPasteboard * pb = [info draggingPasteboard];
 	NSString * type = [pb availableTypeFromArray:[NSArray arrayWithObjects:MA_PBoardType_FolderList, MA_PBoardType_RSSSource, @"WebURLsWithTitlesPboardType", NSStringPboardType, nil]];
 	TreeNode * node = targetItem ? (TreeNode *)targetItem : rootNode;
 
@@ -1376,12 +1379,12 @@
 		// This is possibly a URL that we'll handle as a potential feed subscription. It's
 		// not our call to make though.
 		int predecessorId = (childIndex > 0) ? [[node childByIndex:(childIndex - 1)] nodeId] : 0;
-		[[NSApp delegate] createNewSubscription:[pb stringForType:type] underFolder:parentId afterChild:predecessorId];
+		[APPCONTROLLER createNewSubscription:[pb stringForType:type] underFolder:parentId afterChild:predecessorId];
 		return YES;
 	}
 	if ([type isEqualToString:MA_PBoardType_FolderList])
 	{
-		Database * db = [Database sharedDatabase];
+		Database * db = [Database sharedManager];
 		NSArray * arrayOfSources = [pb propertyListForType:type];
 		int count = [arrayOfSources count];
 		int index;
@@ -1413,7 +1416,7 @@
 	}
 	if ([type isEqualToString:MA_PBoardType_RSSSource])
 	{
-		Database * db = [Database sharedDatabase];
+		Database * dbManager = [Database sharedManager];
 		NSArray * arrayOfSources = [pb propertyListForType:type];
 		int count = [arrayOfSources count];
 		int index;
@@ -1421,29 +1424,30 @@
 		// This is an RSS drag using the protocol defined by Ranchero for NetNewsWire. See
 		// http://ranchero.com/netnewswire/rssclipboard.php for more details.
 		//
-		int folderToSelect = -1;
+		__block int folderToSelect = -1;
 		for (index = 0; index < count; ++index)
 		{
-			[db beginTransaction];
 			NSDictionary * sourceItem = [arrayOfSources objectAtIndex:index];
 			NSString * feedTitle = [sourceItem valueForKey:@"sourceName"];
 			NSString * feedHomePage = [sourceItem valueForKey:@"sourceHomeURL"];
 			NSString * feedURL = [sourceItem valueForKey:@"sourceRSSURL"];
 			NSString * feedDescription = [sourceItem valueForKey:@"sourceDescription"];
 
-			if ((feedURL != nil) && [db folderFromFeedURL:feedURL] == nil)
+			if ((feedURL != nil) && [dbManager folderFromFeedURL:feedURL] == nil)
 			{
 				int predecessorId = (childIndex > 0) ? [[node childByIndex:(childIndex - 1)] nodeId] : 0;
-				int folderId = [db addRSSFolder:feedTitle underParent:parentId afterChild:predecessorId subscriptionURL:feedURL];
-				if (feedDescription != nil)
-					[db setFolderDescription:folderId newDescription:feedDescription];
-				if (feedHomePage != nil)
-					[db setFolderHomePage:folderId newHomePage:feedHomePage];
-				if (folderId > 0)
+				int folderId = [dbManager addRSSFolder:feedTitle underParent:parentId afterChild:predecessorId subscriptionURL:feedURL];
+                if (feedDescription != nil) {
+                    [dbManager setDescription:feedDescription forFolder:folderId];
+                }
+                if (feedHomePage != nil) {
+                    [dbManager setHomePage:feedHomePage forFolder:folderId];
+                }
+                if (folderId > 0) {
 					folderToSelect = folderId;
+                }
 				++childIndex;
 			}
-			[db commitTransaction];
 		}
 
 		// If parent was a group, expand it now
@@ -1458,32 +1462,31 @@
 	}
 	if ([type isEqualToString:@"WebURLsWithTitlesPboardType"])
 	{
-		Database * db = [Database sharedDatabase];
+		Database * dbManager = [Database sharedManager];
 		NSArray * webURLsWithTitles = [pb propertyListForType:type];
 		NSArray * arrayOfURLs = [webURLsWithTitles objectAtIndex:0];
 		NSArray * arrayOfTitles = [webURLsWithTitles objectAtIndex:1];
 		int count = [arrayOfURLs count];
 		int index;
 		
-		int folderToSelect = -1;
+		__block int folderToSelect = -1;
 		for (index = 0; index < count; ++index)
 		{
-			[db beginTransaction];
 			NSString * feedTitle = [arrayOfTitles objectAtIndex:index];
 			NSString * feedURL = [arrayOfURLs objectAtIndex:index];
 			NSURL * draggedURL = [NSURL URLWithString:feedURL];
 			if (([draggedURL scheme] != nil) && [[draggedURL scheme] isEqualToString:@"feed"])
 				feedURL = [NSString stringWithFormat:@"http:%@", [draggedURL resourceSpecifier]];
 			
-			if ([db folderFromFeedURL:feedURL] == nil)
+			if ([dbManager folderFromFeedURL:feedURL] == nil)
 			{
 				int predecessorId = (childIndex > 0) ? [[node childByIndex:(childIndex - 1)] nodeId] : 0;
-				int newFolderId = [db addRSSFolder:feedTitle underParent:parentId afterChild:predecessorId subscriptionURL:feedURL];
-				if (newFolderId > 0)
+				int newFolderId = [dbManager addRSSFolder:feedTitle underParent:parentId afterChild:predecessorId subscriptionURL:feedURL];
+                if (newFolderId > 0) {
 					folderToSelect = newFolderId;
+                }
 				++childIndex;
 			}
-			[db commitTransaction];
 		}
 		
 		// If parent was a group, expand it now
@@ -1506,10 +1509,15 @@
 {
 	[[NSNotificationCenter defaultCenter] removeObserver:self];
 	[cellFont release];
+	cellFont=nil;
 	[boldCellFont release];
+	boldCellFont=nil;
 	[folderErrorImage release];
+	folderErrorImage=nil;
 	[refreshProgressImage release];
+	refreshProgressImage=nil;
 	[rootNode release];
+	rootNode=nil;
 	[super dealloc];
 }
 @end

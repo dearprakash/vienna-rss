@@ -20,6 +20,7 @@
 
 extern NSString * MA_DefaultStyleName;
 extern NSString * MA_DefaultUserAgentString;
+extern NSString * MA_BrowserUserAgentString;
 
 extern NSString * MAPref_ArticleListFont;
 extern NSString * MAPref_AutoSortFoldersTree;
@@ -36,6 +37,7 @@ extern NSString * MAPref_CheckForNewArticlesOnStartup;
 extern NSString * MAPref_FolderImagesFolder;
 extern NSString * MAPref_RefreshThreads;
 extern NSString * MAPref_ActiveStyleName;
+extern NSString * MAPref_ActiveTextSizeMultiplier;
 extern NSString * MAPref_StylesFolder;
 extern NSString * MAPref_PluginsFolder;
 extern NSString * MAPref_ScriptsFolder;
@@ -50,6 +52,7 @@ extern NSString * MAPref_AutoExpireDuration;
 extern NSString * MAPref_DownloadsList;
 extern NSString * MAPref_ShowFolderImages;
 extern NSString * MAPref_UseJavaScript;
+extern NSString * MAPref_UseWebPlugins;
 extern NSString * MAPref_CachedArticleGUID;
 extern NSString * MAPref_ArticleSortDescriptors;
 extern NSString * MAPref_FilterMode;
@@ -73,6 +76,7 @@ extern NSString * MAPref_GoogleNewSubscription;
 extern NSString * MAPref_ConcurrentDownloads;
 extern NSString * MAPref_SyncServer;
 extern NSString * MAPref_SyncingUser;
+extern NSString * MAPref_SendSystemProfileInfo;
 
 extern NSInteger MA_Default_BackTrackQueueSize;
 extern NSInteger MA_Default_RefreshThreads;

@@ -27,14 +27,14 @@
 @interface RefreshManager : NSObject {
 	NSUInteger maximumConnections;
 	NSUInteger countOfNewArticles;
-	NSMutableArray * refreshArray;
 	NSMutableArray * authQueue;
 	NSTimer * pumpTimer;
 	FeedCredentials * credentialsController;
-	//BOOL hasStarted;
+	BOOL hasStarted;
 	NSString * statusMessageDuringRefresh;
     SyncTypes syncType;
 	ASINetworkQueue *networkQueue;
+	dispatch_queue_t _queue;
 }
 
 +(RefreshManager *)sharedManager;
@@ -51,8 +51,9 @@
 -(BOOL)isConnecting;
 -(NSUInteger)countOfNewArticles;
 -(NSString *)statusMessageDuringRefresh;
--(void)refreshFavIcon:(Folder *)folder;
+-(void)refreshFavIconForFolder:(Folder *)folder;
 -(void)addConnection:(ASIHTTPRequest *)conn;
+-(dispatch_queue_t)asyncQueue;
 @end
 
 // Refresh types

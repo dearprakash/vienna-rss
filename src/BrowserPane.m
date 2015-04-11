@@ -72,15 +72,13 @@
 
 + (void)load
 {
-	NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
-
-	if (self == [BrowserPane class]) {
-		//These are synonyms
-		[self exposeBinding:@"isLoading"];
-		[self exposeBinding:@"isProcessing"];
-	}
-	
-	[pool drain];
+    @autoreleasepool {
+        if (self == [BrowserPane class]) {
+            //These are synonyms
+            [self exposeBinding:@"isLoading"];
+            [self exposeBinding:@"isProcessing"];
+        }
+    }
 }
 
 + (NSSet *)keyPathsForValuesAffectingValueForKey:(NSString *)key
@@ -123,20 +121,19 @@
 -(void)awakeFromNib
 {
 	// Create our webview
-	[self.webPane initTabbedWebView];
-	[self.webPane retain];
-	[self.webPane setUIDelegate:self];
-	[self.webPane setFrameLoadDelegate:self];
+	[webPane initTabbedWebView];
+	[webPane setUIDelegate:self];
+	[webPane setFrameLoadDelegate:self];
 	NSString * safariVersion = [[[NSBundle bundleWithPath:@"/Applications/Safari.app"] infoDictionary] objectForKey:@"CFBundleVersion"];
 	if (safariVersion)
 		safariVersion = [safariVersion substringFromIndex:1];
 	else
 		safariVersion = @"532.22";
-	[self.webPane setApplicationNameForUserAgent:[NSString stringWithFormat:MA_DefaultUserAgentString, [[((ViennaApp *)NSApp) applicationVersion] firstWord], safariVersion]];
+	[webPane setApplicationNameForUserAgent:[NSString stringWithFormat:MA_BrowserUserAgentString, [[((ViennaApp *)NSApp) applicationVersion] firstWord], safariVersion]];
 	
 	// Make web preferences 16pt Arial to match Safari
-	[[self.webPane preferences] setStandardFontFamily:@"Arial"];
-	[[self.webPane preferences] setDefaultFontSize:16];
+	[[webPane preferences] setStandardFontFamily:@"Arial"];
+	[[webPane preferences] setDefaultFontSize:16];
 	
 	// Use an AddressBarCell for the address field which allows space for the
 	// web page image and an optional lock icon for secure pages.
@@ -192,6 +189,7 @@
 /* showRssPageButton
  * Conditionally show or hide the RSS page button.
  */
+ // TODO : associate a menu when there are multiple feeds
 -(void)showRssPageButton:(BOOL)showButton
 {
 	[rssPageButton setEnabled:showButton];
@@ -450,7 +448,7 @@
 			[rssPageURL release];
 			rssPageURL = [arrayOfLinks objectAtIndex:0];
 			if (![rssPageURL hasPrefix:@"http:"] && ![rssPageURL hasPrefix:@"https:"])
-				rssPageURL = [[self viewLink] stringByAppendingString:rssPageURL];
+				rssPageURL = [[NSURL URLWithString:rssPageURL relativeToURL:[self url]] absoluteString];
 			[rssPageURL retain];
 			[self showRssPageButton:YES];
 		}
@@ -477,7 +475,6 @@
 {
 	if (frame == [self.webPane mainFrame])
 	{
-		[image setScalesWhenResized:YES];
 		[image setSize:NSMakeSize(14, 14)];
 		[iconImage setImage:image];
 	}
@@ -512,10 +509,11 @@
  */
 - (void)webView:(WebView *)sender runJavaScriptAlertPanelWithMessage:(NSString *)message initiatedByFrame:(WebFrame *)frame {
 	NSRunInformationalAlertPanel(NSLocalizedString(@"JavaScript", @""),	// title
-		message,	// message
+		@"%@",	// message placeholder
 		NSLocalizedString(@"OK", @""),	// default button
 		nil,	// alt button
-		nil);	// other button
+		nil,	// other button
+		message);
 }
 
 /* runJavaScriptConfirmPanelWithMessage
@@ -523,10 +521,11 @@
  */
 - (BOOL)webView:(WebView *)sender runJavaScriptConfirmPanelWithMessage:(NSString *)message initiatedByFrame:(WebFrame *)frame {
 	NSInteger result = NSRunInformationalAlertPanel(NSLocalizedString(@"JavaScript", @""),	// title
-		message,	// message
+		@"%@",	// message placeholder
 		NSLocalizedString(@"OK", @""),	// default button
 		NSLocalizedString(@"Cancel", @""),	// alt button
-		nil);
+		nil,
+		message);
 	return NSAlertDefaultReturn == result;
 }
 
@@ -560,6 +559,7 @@
  */
 -(void)webViewClose:(WebView *)sender
 {
+	[self handleStopLoading:self];
 	[[controller browserView] closeTabItemView:self];
 }
 
@@ -733,8 +733,11 @@
 -(void)handleStopLoading:(id)sender
 {
 	[self willChangeValueForKey:@"isLoading"];
+	[self.webPane setFrameLoadDelegate:nil];
+	[self.webPane setUIDelegate:nil];
 	[self.webPane stopLoading:self];
 	[self didChangeValueForKey:@"isLoading"];
+	[[self.webPane mainFrame] loadHTMLString:@"" baseURL:nil];
 }
 
 /* handleRSSPage
@@ -752,7 +755,7 @@
 			parentFolderId = currentFolderId;
 			currentFolderId = 0;
 		}
-		[[NSApp delegate] createNewSubscription:rssPageURL underFolder:parentFolderId afterChild:currentFolderId];
+		[APPCONTROLLER createNewSubscription:rssPageURL underFolder:parentFolderId afterChild:currentFolderId];
 	}
 }
 
@@ -787,15 +790,19 @@
 -(void)dealloc
 {
 	[viewTitle release];
+	viewTitle=nil;
 	[rssPageURL release];
-	[self.webPane setFrameLoadDelegate:nil];
-	[self.webPane setUIDelegate:nil];
+	rssPageURL=nil;
 	[self handleStopLoading:nil];
-	[self.webPane close];
+	[webPane setFrameLoadDelegate:nil];
+	[webPane setUIDelegate:nil];
+	[webPane close];
 	[lastError release];
+	lastError=nil;
 	[pageFilename release];
-	[self.webPane release];
-	self.webPane = nil;
+	pageFilename=nil;
+	[webPane release];
+	webPane = nil;
 	[super dealloc];
 }
 @end

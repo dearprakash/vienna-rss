@@ -45,7 +45,7 @@
 	
 	if ((self = [super initWithWindowNibName:@"XMLSource"]) != nil)
 	{
-		sourceWindowTitle = [[NSString alloc] initWithFormat:@"%@ %li: %@", NSLocalizedString(@"Source of folder", nil), [folder itemId], [folder name]];
+		sourceWindowTitle = [[NSString alloc] initWithFormat:@"%@ %li: %@", NSLocalizedString(@"Source of folder", nil), (long)[folder itemId], [folder name]];
 		feedSourceFilePath = [[folder feedSourceFilePath] copy];
 	}
 	return self;
@@ -146,7 +146,7 @@
 		if (navigationType == WebNavigationTypeLinkClicked)
 		{
 			[listener ignore];
-			[[NSApp delegate] openURL:[request URL] inPreferredBrowser:YES];
+			[APPCONTROLLER openURL:[request URL] inPreferredBrowser:YES];
 			return;
 		}
 	}
@@ -157,7 +157,9 @@
 -(void)dealloc
 {
 	[feedSourceFilePath release];
+	feedSourceFilePath=nil;
 	[sourceWindowTitle release];
+	sourceWindowTitle=nil;
 	[super dealloc];
 }
 

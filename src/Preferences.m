@@ -20,7 +20,7 @@
 
 #import "Preferences.h"
 #import "Constants.h"
-#import "Message.h"
+#import "Article.h"
 #import "SearchMethod.h"
 #import <Sparkle/Sparkle.h>
 
@@ -36,6 +36,12 @@ NSString * MA_StylesFolder_Name = @"Styles";
 NSString * MA_ScriptsFolder_Name = @"Scripts";
 NSString * MA_PluginsFolder_Name = @"Plugins";
 NSString * MA_FeedSourcesFolder_Name = @"Sources";
+
+// NSNotificationCenter string constants
+NSString * const kMA_Notify_MinimumFontSizeChange = @"MA_Notify_MinimumFontSizeChange";
+NSString * const kMA_Notify_UseJavaScriptChange = @"MA_Notify_UseJavaScriptChange";
+NSString * const kMA_Notify_UseWebPluginsChange = @"MA_Notify_UseWebPluginsChange";
+
 
 // The default preferences object.
 static Preferences * _standardPreferences = nil;
@@ -170,10 +176,12 @@ static Preferences * _standardPreferences = nil;
 		openLinksInVienna = [self boolForKey:MAPref_OpenLinksInVienna];
 		openLinksInBackground = [self boolForKey:MAPref_OpenLinksInBackground];
 		displayStyle = [[userPrefs valueForKey:MAPref_ActiveStyleName] retain];
+		textSizeMultiplier = [[userPrefs valueForKey:MAPref_ActiveTextSizeMultiplier] floatValue];
 		showFolderImages = [self boolForKey:MAPref_ShowFolderImages];
 		showStatusBar = [self boolForKey:MAPref_ShowStatusBar];
 		showFilterBar = [self boolForKey:MAPref_ShowFilterBar];
 		useJavaScript = [self boolForKey:MAPref_UseJavaScript];
+        useWebPlugins = [self boolForKey:MAPref_UseWebPlugins];
 		showAppInStatusBar = [self boolForKey:MAPref_ShowAppInStatusBar];
 		folderFont = [[NSUnarchiver unarchiveObjectWithData:[userPrefs objectForKey:MAPref_FolderFont]] retain];
 		articleFont = [[NSUnarchiver unarchiveObjectWithData:[userPrefs objectForKey:MAPref_ArticleListFont]] retain];
@@ -190,6 +198,7 @@ static Preferences * _standardPreferences = nil;
 				
 		//Sparkle autoupdate
 		checkForNewOnStartup = [[SUUpdater sharedUpdater] automaticallyChecksForUpdates];
+        sendSystemSpecs = [[SUUpdater sharedUpdater] sendsSystemProfile];
 
 		if (shouldSaveFeedSource)
 		{
@@ -221,18 +230,31 @@ static Preferences * _standardPreferences = nil;
 {
 	[[NSNotificationCenter defaultCenter] removeObserver:self];
 	[defaultDatabase release];
+	defaultDatabase=nil;
 	[imagesFolder release];
+	imagesFolder=nil;
 	[downloadFolder release];
+	downloadFolder=nil;
 	[folderFont release];
+	folderFont=nil;
 	[articleFont release];
+	articleFont=nil;
 	[displayStyle release];
+	displayStyle=nil;
 	[preferencesPath release];
+	preferencesPath=nil;
 	[articleSortDescriptors release];
+	articleSortDescriptors=nil;
 	[profilePath release];
+	profilePath=nil;
 	[feedSourcesFolder release];
+	feedSourcesFolder=nil;
 	[searchMethod release];
+	searchMethod=nil;
 	[syncServer release];
+	syncServer=nil;
 	[syncingUser release];
+	syncingUser=nil;
 	[super dealloc];
 }
 
@@ -263,10 +285,12 @@ static Preferences * _standardPreferences = nil;
 	[defaultValues setObject:[NSNumber numberWithInt:MA_Default_RefreshThreads] forKey:MAPref_RefreshThreads];
 	[defaultValues setObject:[NSArray arrayWithObjects:nil] forKey:MAPref_ArticleListColumns];
 	[defaultValues setObject:MA_DefaultStyleName forKey:MAPref_ActiveStyleName];
+	[defaultValues setObject:[NSNumber numberWithFloat:1.0] forKey:MAPref_ActiveTextSizeMultiplier];
 	[defaultValues setObject:[NSNumber numberWithInteger:MA_Default_BackTrackQueueSize] forKey:MAPref_BacktrackQueueSize];
 	[defaultValues setObject:[NSNumber numberWithInt:MA_FolderSort_ByName] forKey:MAPref_AutoSortFoldersTree];
 	[defaultValues setObject:boolYes forKey:MAPref_ShowFolderImages];
 	[defaultValues setObject:boolYes forKey:MAPref_UseJavaScript];
+    [defaultValues setObject:boolYes forKey:MAPref_UseWebPlugins];
 	[defaultValues setObject:boolYes forKey:MAPref_OpenLinksInVienna];
 	[defaultValues setObject:boolYes forKey:MAPref_OpenLinksInBackground];
 	[defaultValues setObject:boolNo forKey:MAPref_ShowAppInStatusBar];
@@ -475,10 +499,33 @@ static Preferences * _standardPreferences = nil;
 	{
 		useJavaScript = flag;
 		[self setBool:flag forKey:MAPref_UseJavaScript];
-		[[NSNotificationCenter defaultCenter] postNotificationName:@"MA_Notify_UseJavaScriptChange" object:nil];
+		[[NSNotificationCenter defaultCenter] postNotificationName:kMA_Notify_UseJavaScriptChange
+                                                            object:nil];
 	}
 }
 
+
+/* useWebPlugins
+ * Specifies whether or not to enable web plugins
+ */
+-(BOOL)useWebPlugins
+{
+    return useWebPlugins;
+}
+
+/* setEnableJavaScript
+ * Enable whether JavaScript is used.
+ */
+-(void)setUseWebPlugins:(BOOL)flag
+{
+    if (useWebPlugins != flag)
+    {
+        useWebPlugins = flag;
+        [self setBool:flag forKey:MAPref_UseWebPlugins];
+        [[NSNotificationCenter defaultCenter] postNotificationName:kMA_Notify_UseWebPluginsChange
+                                                            object:nil];
+    }
+}
 
 -(NSUInteger)concurrentDownloads {
 	return concurrentDownloads;
@@ -511,7 +558,8 @@ static Preferences * _standardPreferences = nil;
 	{
 		minimumFontSize = newSize;
 		[self setInteger:minimumFontSize forKey:MAPref_MinimumFontSize];
-		[[NSNotificationCenter defaultCenter] postNotificationName:@"MA_Notify_MinimumFontSizeChange" object:nil];
+		[[NSNotificationCenter defaultCenter] postNotificationName:kMA_Notify_MinimumFontSizeChange
+                                                            object:nil];
 	}
 }
 
@@ -524,7 +572,8 @@ static Preferences * _standardPreferences = nil;
 	{
 		enableMinimumFontSize = flag;
 		[self setBool:flag forKey:MAPref_UseMinimumFontSize];
-		[[NSNotificationCenter defaultCenter] postNotificationName:@"MA_Notify_MinimumFontSizeChange" object:nil];
+		[[NSNotificationCenter defaultCenter] postNotificationName:kMA_Notify_MinimumFontSizeChange
+                                                            object:nil];
 	}
 }
 
@@ -843,6 +892,27 @@ static Preferences * _standardPreferences = nil;
 	}
 }
 
+/* textSizeMultiplier
+ * Return the textSizeMultiplier to be applied to an ArticleView
+ */
+-(float)textSizeMultiplier
+{
+	return textSizeMultiplier;
+}
+
+/* setTextSizeMultiplier
+ * Changes the textSizeMultiplier to be applied to an ArticleView
+ */
+-(void)setTextSizeMultiplier:(float)newValue
+{
+	if (newValue != textSizeMultiplier)
+	{
+		textSizeMultiplier = newValue;
+		[self setObject:[NSNumber numberWithFloat:newValue] forKey:MAPref_ActiveTextSizeMultiplier];
+		[[NSNotificationCenter defaultCenter] postNotificationName:@"MA_Notify_StyleChange" object:nil];
+	}
+}
+
 /* folderListFont
  * Retrieve the name of the font used in the folder list
  */
@@ -1104,6 +1174,27 @@ static Preferences * _standardPreferences = nil;
 		// Huh, there's a Sources file there, but it's not a directory.
 		NSLog(@"Could not create feed sources folder, because a non-directory file already exists at path '%@'.", feedSourcesFolder);
 	}
+}
+
+/* sendSystemSpecs
+ * Returns whether or not Vienna sends system specs when checking for updates.
+ */
+-(BOOL)sendSystemSpecs
+{
+    return sendSystemSpecs;
+}
+
+/* setCheckForNewOnStartup
+ * Changes whether or not Vienna sends system specs when checking for updates.
+ */
+-(void)setSendSystemSpecs:(BOOL)flag
+{
+    if (flag != sendSystemSpecs)
+    {
+        sendSystemSpecs = flag;
+        [[SUUpdater sharedUpdater] setSendsSystemProfile:flag];
+        [[NSNotificationCenter defaultCenter] postNotificationName:@"MA_Notify_PreferenceChange" object:nil];
+    }
 }
 
 #pragma mark -

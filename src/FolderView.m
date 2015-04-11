@@ -21,6 +21,7 @@
 #import "FolderView.h"
 #import "ImageAndTextCell.h"
 #import "TreeNode.h"
+#import "AppController.h"
 
 @interface NSObject (FolderViewDelegate)
 	-(BOOL)handleKeyDown:(unichar)keyChar withFlags:(NSUInteger )flags;
@@ -54,7 +55,6 @@
 	grayGradient = [[NSImage alloc] initWithContentsOfFile: grayGradientURL ];
 
 	iRect = NSMakeRect(0,0,1,[blueGradient size].height-1);					
-	[grayGradient setFlipped:YES];
 	
 	// Add the notifications for collapse and expand.
 	NSNotificationCenter * nc = [NSNotificationCenter defaultCenter];
@@ -99,7 +99,7 @@
 	if ([[theEvent characters] length] == 1)
 	{
 		unichar keyChar = [[theEvent characters] characterAtIndex:0];
-		if ([[NSApp delegate] handleKeyDown:keyChar withFlags:[theEvent modifierFlags]])
+		if ([APPCONTROLLER handleKeyDown:keyChar withFlags:[theEvent modifierFlags]])
 			return;
 	}
 	[super keyDown:theEvent];
@@ -245,7 +245,7 @@
  */
 -(IBAction)delete:(id)sender
 {
-	[[NSApp delegate] deleteFolder:self];
+	[APPCONTROLLER deleteFolder:self];
 }
 
 /* validateMenuItem
@@ -291,14 +291,12 @@
 		NSRect selectedRect = [self rectOfRow:rowIndex];
 		if (NSIntersectsRect(selectedRect, rect))
 		{
-			[blueGradient setFlipped:YES];
-			[blueGradient drawInRect:selectedRect fromRect:iRect operation:NSCompositeSourceOver fraction:1];
-			[blueGradient setFlipped:NO];
+			[blueGradient drawInRect:selectedRect fromRect:iRect operation:NSCompositeSourceOver fraction:1 respectFlipped:YES hints:nil];
 
 			if ([self editedRow] == -1)
 			{
 				if ([[self window] firstResponder] != self || ![[self window] isKeyWindow])
-					[grayGradient drawInRect:selectedRect fromRect:iRect operation:NSCompositeSourceOver fraction:1];
+					[grayGradient drawInRect:selectedRect fromRect:iRect operation:NSCompositeSourceOver fraction:1 respectFlipped:YES hints:nil];
 			}
 			if ([self editedRow] != -1)
 				[self performSelector:@selector(prvtResizeTheFieldEditor) withObject:nil afterDelay:0.001];
@@ -340,9 +338,7 @@
 		// Get rid of the white border, leftover from resizing the fieldEditor..
 		editRect.origin.x -= 6;
 		editRect.size.width += 6;
-		[blueGradient setFlipped:YES];
-		[blueGradient drawInRect:editRect fromRect:iRect operation:NSCompositeSourceOver fraction:1];
-		[blueGradient setFlipped:NO];
+		[blueGradient drawInRect:editRect fromRect:iRect operation:NSCompositeSourceOver fraction:1 respectFlipped:YES hints:nil];
 		
 		// Put back any cell image
 		int editColumnIndex = [self editedColumn];
@@ -384,12 +380,25 @@
 	[self prvtResizeTheFieldEditor];
 }
 
+/* textDidBeginEditing
+ * in order to handle user's change of mind, backup the current folder name
+ */
+- (void)textDidBeginEditing:(NSNotification *)aNotification
+{
+	NSText * editor = [[self window] fieldEditor:YES forObject:self];
+	backupString = [[editor string] copy];
+	[super textDidBeginEditing:aNotification];
+}
+
 /* textDidEndEditing
  * Code from Omni that ensures that when the user hits the Enter key, we finish editing and do NOT move to the next
  * cell which is the default outlineview control cell editing behaviour.
  */
 -(void)textDidEndEditing:(NSNotification *)notification;
 {
+	[backupString release];
+	backupString=nil;
+
 	// This is ugly, but just about the only way to do it. NSTableView is determined to select and edit something else, even the
 	// text field that it just finished editing, unless we mislead it about what key was pressed to end editing.
 	if ([[[notification userInfo] objectForKey:@"NSTextMovement"] intValue] == NSReturnTextMovement)
@@ -409,14 +418,32 @@
 		[super textDidEndEditing:notification];
 }
 
+/* cancelOperation
+ * If Escape key or Command-. is pressed,
+ * stop editing and restore folder's name from backup
+ */
+- (void)cancelOperation:(id)sender
+{
+	if (backupString !=nil)
+	{
+		NSText * editor = [[self window] fieldEditor:YES forObject:self];
+		[editor setString:backupString];
+	}
+	[self reloadData];
+}
+
 /* dealloc
  * Clean up.
  */
 -(void)dealloc
 {
 	[[NSNotificationCenter defaultCenter] removeObserver:self];
+	[backupString release];
+	backupString=nil;
 	[grayGradient release];
+	grayGradient=nil;
 	[blueGradient release];
+	blueGradient=nil;
 	[super dealloc];
 }
 @end

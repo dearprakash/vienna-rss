@@ -91,13 +91,13 @@
 		ActivityItem * selectedItem = [allItems objectAtIndex:selectedRow];
 
 		// Name might be a URL if the feed has always been invalid.
-		Database * db = [Database sharedDatabase];
+		Database * db = [Database sharedManager];
 		Folder * folder = [db folderFromName:[selectedItem name]];
 		if (folder == nil)
 			folder = [db folderFromFeedURL:[selectedItem name]];
 		if (folder != nil)
 		{
-			AppController * controller = (AppController *)[NSApp delegate];
+			AppController * controller = APPCONTROLLER;
 			[controller selectFolder:[folder itemId]];
 		}
 	}
@@ -201,7 +201,9 @@
 -(void)dealloc
 {
 	[[NSNotificationCenter defaultCenter] removeObserver:self];
+	[activityWindow setDelegate:nil];
 	[allItems release];
+	allItems=nil;
 	[super dealloc];
 }
 @end

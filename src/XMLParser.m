@@ -36,15 +36,15 @@
 -(BOOL)setData:(NSData *)data
 {
 	CFXMLTreeRef newTree;
-	CFDictionaryRef error = nil;
 
-	NS_DURING
-		newTree = CFXMLTreeCreateFromDataWithError(kCFAllocatorDefault, (CFDataRef)data, NULL, kCFXMLParserNoOptions, kCFXMLNodeCurrentVersion, &error);
-	NS_HANDLER
+	@try {
+		newTree = CFXMLTreeCreateFromDataWithError(kCFAllocatorDefault, (CFDataRef)data, NULL, kCFXMLParserNoOptions, kCFXMLNodeCurrentVersion, NULL);
+	}
+	@catch (NSException *error) {
+		if (newTree != nil)
+			CFRelease(newTree);
 		newTree = nil;
-	NS_ENDHANDLER
-	if (error != nil)
-		CFRelease(error);
+	}
 	if (newTree != nil)
 	{
 		[self setTreeRef:newTree];

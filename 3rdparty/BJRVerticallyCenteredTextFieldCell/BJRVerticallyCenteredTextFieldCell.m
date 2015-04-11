@@ -23,8 +23,8 @@
         attrString = whiteString;
     }
 
-    [attrString drawWithRect: [self titleRectForBounds:cellFrame] 
-                     options: NSStringDrawingTruncatesLastVisibleLine | NSStringDrawingUsesLineFragmentOrigin];
+    [attrString drawWithRect: [self titleRectForBounds:cellFrame]
+                     options: NSStringDrawingUsesLineFragmentOrigin | NSStringDrawingDisableScreenFontSubstitution];
 }
 
 - (NSRect)titleRectForBounds:(NSRect)theRect {
@@ -34,11 +34,22 @@
     /* find out how big the rendered text will be */
     NSAttributedString *attrString = self.attributedStringValue;
     NSRect textRect = [attrString boundingRectWithSize: titleFrame.size
-                                               options: NSStringDrawingTruncatesLastVisibleLine | NSStringDrawingUsesLineFragmentOrigin ];
+                                               options: NSStringDrawingUsesLineFragmentOrigin | NSStringDrawingDisableScreenFontSubstitution];
 
-	titleFrame.origin.y = theRect.origin.y + (theRect.size.height - textRect.size.height )/2.0;
-	titleFrame.size.height = textRect.size.height;
-
+    CGFloat tHeight = textRect.size.height;
+    CGFloat fHeight = titleFrame.size.height;
+    /* If the height of the rendered text is less then the available height,
+     * we modify the titleFrame to center the text vertically */
+    if (tHeight < fHeight) {
+        titleFrame.origin.y = theRect.origin.y + (theRect.size.height - tHeight )/2.0;
+        titleFrame.size.height = tHeight;
+    } else {
+    	if (tHeight < 1.5 * fHeight)
+    	{
+    		titleFrame.origin.y = theRect.origin.y + (fHeight - tHeight);
+    		titleFrame.size.height = tHeight;
+    	}
+    }
     return titleFrame;
 }
 

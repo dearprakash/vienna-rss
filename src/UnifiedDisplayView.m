@@ -30,6 +30,8 @@
 #import "BrowserPane.h"
 
 #define LISTVIEW_CELL_IDENTIFIER		@"ArticleCellView"
+// 150 seems a reasonable value to avoid calculating too many frames before being able to update display
+#define DEFAULT_CELL_HEIGHT	150
 #define XPOS_IN_CELL	6
 #define YPOS_IN_CELL	2
 
@@ -64,8 +66,6 @@
 		blockMarkRead = NO;
 		guidOfArticleToSelect = nil;
 		markReadTimer = nil;
-		isCurrentPageFullHTML = NO;
-		currentURL = nil;
 		rowHeightArray = [[NSMutableArray alloc] init];
     }
     return self;
@@ -98,6 +98,7 @@
 	// explicitly localise in the NIB file.
 	NSMenu * articleListMenu = [[NSMenu alloc] init];
 	[articleListMenu addItem:copyOfMenuItemWithAction(@selector(markRead:))];
+	[articleListMenu addItem:copyOfMenuItemWithAction(@selector(markUnread:))];
 	[articleListMenu addItem:copyOfMenuItemWithAction(@selector(markFlagged:))];
 	[articleListMenu addItem:copyOfMenuItemWithAction(@selector(deleteMessage:))];
 	[articleListMenu addItem:copyOfMenuItemWithAction(@selector(restoreMessage:))];
@@ -126,10 +127,13 @@
 -(void)dealloc
 {
 	[[NSNotificationCenter defaultCenter] removeObserver:self];
+	[articleList setDelegate:nil];
 	[markReadTimer release];
+	markReadTimer=nil;
 	[guidOfArticleToSelect release];
-	[currentURL release];
+	guidOfArticleToSelect=nil;
 	[rowHeightArray release];
+	rowHeightArray=nil;
 	[super dealloc];
 }
 
@@ -153,10 +157,11 @@
  */
 - (void)webView:(WebView *)sender runJavaScriptAlertPanelWithMessage:(NSString *)message initiatedByFrame:(WebFrame *)frame {
 	NSRunInformationalAlertPanel(NSLocalizedString(@"JavaScript", @""),	// title
-		message,	// message
+		@"%@",	// message placeholder
 		NSLocalizedString(@"OK", @""),	// default button
 		nil,	// alt button
-		nil);	// other button
+		nil,	// other button
+		message);
 }
 
 /* runJavaScriptConfirmPanelWithMessage
@@ -164,10 +169,11 @@
  */
 - (BOOL)webView:(WebView *)sender runJavaScriptConfirmPanelWithMessage:(NSString *)message initiatedByFrame:(WebFrame *)frame {
 	NSInteger result = NSRunInformationalAlertPanel(NSLocalizedString(@"JavaScript", @""),	// title
-		message,	// message
+		@"%@",	// message placeholder
 		NSLocalizedString(@"OK", @""),	// default button
 		NSLocalizedString(@"Cancel", @""),	// alt button
-		nil);
+		nil,
+		message);
 	return NSAlertDefaultReturn == result;
 }
 
@@ -201,40 +207,29 @@
 	if (urlLink != nil)
 		return [controller contextMenuItemsForElement:element defaultMenuItems:defaultMenuItems];
 
-	// If we have a full HTML page then do the additional web-page specific items.
-	if (isCurrentPageFullHTML)
+	NSMutableArray * newDefaultMenu = [[NSMutableArray alloc] init];
+	int count = [defaultMenuItems count];
+	int index;
+
+	// Copy over everything but the reload menu item, which we can't handle if
+	// this is not a full HTML page since we don't have an URL.
+	for (index = 0; index < count; index++)
 	{
-		WebFrame * frameKey = [element valueForKey:WebElementFrameKey];
-		if (frameKey != nil)
-			return [controller contextMenuItemsForElement:element defaultMenuItems:defaultMenuItems];
+		NSMenuItem * menuItem = [defaultMenuItems objectAtIndex:index];
+		if ([menuItem tag] != WebMenuItemTagReload)
+			[newDefaultMenu addObject:menuItem];
 	}
 
-	// Remove the reload menu item if we don't have a full HTML page.
-	if (!isCurrentPageFullHTML)
+	// If we still have some useful menu items (other than Webkit's Web Inspector)
+	// then use them for the new default menu
+	if ([newDefaultMenu count] > 0 && ![[newDefaultMenu objectAtIndex:0] isSeparatorItem])
+		defaultMenuItems = [newDefaultMenu autorelease];
+	// otherwise set the default items to nil as we may have removed all the items.
+	else
 	{
-		NSMutableArray * newDefaultMenu = [[NSMutableArray alloc] init];
-		int count = [defaultMenuItems count];
-		int index;
-
-		// Copy over everything but the reload menu item, which we can't handle if
-		// this is not a full HTML page since we don't have an URL.
-		for (index = 0; index < count; index++)
-		{
-			NSMenuItem * menuItem = [defaultMenuItems objectAtIndex:index];
-			if ([menuItem tag] != WebMenuItemTagReload)
-				[newDefaultMenu addObject:menuItem];
-		}
-
-		// If we still have some menu items then use that for the new default menu, otherwise
-		// set the default items to nil as we may have removed all the items.
-		if ([newDefaultMenu count] > 0)
-			defaultMenuItems = [newDefaultMenu autorelease];
-		else
-        {
-			defaultMenuItems = nil;
-            [newDefaultMenu release];
-        }
-    }
+		defaultMenuItems = nil;
+		[newDefaultMenu release];
+	}
 
 	// Return the default menu items.
     return defaultMenuItems;
@@ -254,14 +249,9 @@
 		if ([obj isKindOfClass:[ArticleCellView class]]) {
 			ArticleCellView * cell = (ArticleCellView *)obj;
 			[cell setInProgress:YES];
-			NSUInteger row= [cell row];
-			if ([cell isEqualTo:[articleList cellForRowAtIndex:row]]) {
-				[cell setFrame:NSMakeRect(0, 0, NSWidth([sender frame]), 50)];
-				NSRect frame = sender.frame;
-				frame.size.height = 1;        // Set the height to a small one.
-				frame.size.width = 1;
-				[sender setFrameOrigin:NSMakePoint(XPOS_IN_CELL, YPOS_IN_CELL)];
-			}
+			NSRect frame = sender.frame;
+			frame.size.height = 1;        // Set the height to a small one.
+			frame.size.width = 1;
 		}
 	}
 }
@@ -279,15 +269,14 @@
 		{
 			ArticleCellView * cell = (ArticleCellView *)obj;
 			[cell setInProgress:NO];
-			NSUInteger row= [cell row];
+			NSUInteger row= [cell articleRow];
 			NSArray * allArticles = [articleController allArticles];
 			if (row < (NSInteger)[allArticles count])
 			{
-				Article * theArticle = [allArticles objectAtIndex:row];
-				NSString * htmlText = [(ArticleView *)sender articleTextFromArray:[NSArray arrayWithObject:theArticle]];
-				Folder * folder = [[Database sharedDatabase] folderFromID:[theArticle folderId]];
-				[(ArticleView *)sender setHTML:htmlText withBase:SafeString([folder feedURL])];
-				[sender setNeedsDisplay:NO];
+				NSRect frame = sender.frame;
+				frame.size.height = 1;        // Set the height to a small one.
+				frame.size.width = 1;
+				[articleList reloadRowAtIndex:row];
 			}
 		}
 		else
@@ -312,7 +301,7 @@
 		if ([objView isKindOfClass:[ArticleCellView class]])
 		{
 			ArticleCellView * cell = (ArticleCellView *)objView;
-			[cell setInProgress:NO];
+			NSUInteger row= [cell row];
 			// get the height of the rendered frame.
 			// I have tested many NSHeight([[ ... ] frame]) tricks, but they were unreliable
 			// and using DOM to get documentElement scrollHeight and/or offsetHeight was the simplest
@@ -327,8 +316,6 @@
 			[[sender preferences] setJavaScriptEnabled:[[Preferences standardPreferences] useJavaScript]];
 			CGFloat fittingHeight = [outputHeight floatValue];
 
-			NSUInteger row= [cell row];
-
 			//get the rect of the current webview frame
 			NSRect webViewRect = [sender frame];
 			//calculate the new frame
@@ -338,30 +325,40 @@
 									   fittingHeight);
 			//set the new frame to the webview
 			[sender setFrame:newWebViewRect];
-
-			if ([bodyHeight isEqualToString:outputHeight] && [bodyHeight isEqualToString:clientHeight]) {
-				if ([cell isEqualTo:[articleList cellForRowAtIndex:row]])
-				{
+			if (row == [cell articleRow] && row < [[articleController allArticles] count]
+			  && [cell folderId] == [[[articleController allArticles] objectAtIndex:row] folderId])
+			{	//relevant cell
+				if ([bodyHeight isEqualToString:outputHeight] && [bodyHeight isEqualToString:clientHeight]) {
 					if (row < [rowHeightArray count])
 						[rowHeightArray replaceObjectAtIndex:row withObject:[NSNumber numberWithFloat:fittingHeight]];
 					else
+					{	NSInteger toAdd = row - [rowHeightArray count] ;
+						for (NSInteger i = 0 ; i < toAdd ; i++) {
+							[rowHeightArray addObject:[NSNumber numberWithFloat:DEFAULT_CELL_HEIGHT]];
+						}
 						[rowHeightArray addObject:[NSNumber numberWithFloat:fittingHeight]];
+					}
+					[cell setInProgress:NO];
 					[articleList reloadRowAtIndex:row];
-					[articleList setNeedsDisplay:YES];
+				}
+				else
+				{
+					// something in the dimensions went wrong : force a reload
+					[self resubmitWebView:sender];
 				}
 			}
-			else {
-				// something in the dimensions went wrong : wait a while, then force a reload
-				if ([cell isEqualTo:[articleList cellForRowAtIndex:row]])
-					[self performSelector:@selector(resubmitWebView:) withObject:sender afterDelay:0.3];
+			else {	//non relevant cell
+				[cell setInProgress:NO];
+				NSRect frame = sender.frame;
+				frame.size.height = 1;        // Set the height to a small one.
+				frame.size.width = 1;
+				[articleList reloadRowAtIndex:row];
 			}
 		} else {
 			// not an ArticleCellView anymore : reposition it, just in case...
-			[sender setNeedsDisplay:NO];
 			NSRect frame = sender.frame;
 			frame.size.height = 1;        // Set the height to a small one.
 			frame.size.width = 1;
-			[sender setFrameOrigin:NSMakePoint(XPOS_IN_CELL, YPOS_IN_CELL)];
 		}
 	}
 }
@@ -370,14 +367,15 @@
 {
 	ArticleCellView * cell = (ArticleCellView *)[sender superview];
 	NSUInteger row = [cell row];
-	if ([cell isEqualTo:[articleList cellForRowAtIndex:row]]) {
+	if (cell != nil)
+	{
 		NSRect frame = sender.frame;
 		frame.size.height = 1;        // Set the height to a small one.
 		frame.size.width = 1;
-		[sender setFrameOrigin:NSMakePoint(XPOS_IN_CELL, YPOS_IN_CELL)];
-		[articleList reloadRowAtIndex:row];
 		[self webViewLoadFinished:[NSNotification notificationWithName:WebViewProgressFinishedNotification object:sender]];
 	}
+	else
+		[articleList reloadRowAtIndex:row];
 }
 
 /* updateAlternateMenuTitle
@@ -451,7 +449,6 @@
 	{
 		if ([[thisArticle guid] isEqualToString:guid])
 		{
-			[articleList setNeedsDisplay:YES];
 			[self makeRowSelectedAndVisible:rowIndex];
 			found = YES;
 			break;
@@ -477,7 +474,8 @@
  */
 -(WebView *)webView
 {
-	return nil;
+	ArticleCellView * cellView = (ArticleCellView *)[[articleList visibleCells] objectAtIndex:0];
+	return [cellView articleView];
 }
 
 /* performFindPanelAction
@@ -507,7 +505,7 @@
  */
 -(BOOL)canGoForward
 {
-	return [articleController canGoForward];
+	return FALSE;
 }
 
 /* canGoBack
@@ -562,7 +560,7 @@
 	if ((row >= 0) && (row < [[articleController allArticles] count]))
 	{
 		Article * article = [[articleController allArticles] objectAtIndex:row];
-		return (article != nil) && ![[Database sharedDatabase] readOnly] && [[articleList window] isVisible];
+		return (article != nil) && ![[Database sharedManager] readOnly] && [[articleList window] isVisible];
 	}
 	return NO;
 }
@@ -589,7 +587,7 @@
 	{
 		NSInteger folderId = [(Folder *)[note object] itemId];
 		NSInteger controllerFolderId = [controller currentFolderId];
-		Folder * controllerFolder = [[Database sharedDatabase] folderFromID:controllerFolderId];
+		Folder * controllerFolder = [[Database sharedManager] folderFromID:controllerFolderId];
 		if (folderId == controllerFolderId || ( !IsRSSFolder(controllerFolder) && !IsGoogleReaderFolder(controllerFolder) ))
 		{
 			[self refreshCurrentFolder];
@@ -639,7 +637,7 @@
 
 	// If there are any unread articles then select the first one in the
 	// first folder.
-	if ([[Database sharedDatabase] countOfUnread] > 0)
+	if ([[Database sharedManager] countOfUnread] > 0)
 	{
 		guidOfArticleToSelect = nil;
 
@@ -667,7 +665,7 @@
 
 	// Scan the current folder from the selection forward. If nothing found, try
 	// other folders until we come back to ourselves.
-	if (([[Database sharedDatabase] countOfUnread] > 0) && (![self viewNextUnreadInCurrentFolder:currentRow]))
+	if (([[Database sharedManager] countOfUnread] > 0) && (![self viewNextUnreadInCurrentFolder:currentRow]))
 	{
 		int nextFolderWithUnread = [foldersTree nextFolderWithUnread:[articleController currentFolderId]];
 		if (nextFolderWithUnread != -1)
@@ -787,7 +785,7 @@
 
 	if (refreshFlag == MA_Refresh_SortAndRedraw)
 		blockSelectionHandler = blockMarkRead = YES;
-	if (currentSelectedRow >= 0 && currentSelectedRow < [allArticles count])
+	if ([articleList visibleRange].location < [allArticles count])
 		guid = [[[allArticles objectAtIndex:[articleList visibleRange].location] guid] retain];
 	if (refreshFlag == MA_Refresh_ReloadFromDatabase)
 		[articleController reloadArrayOfArticles];
@@ -801,7 +799,8 @@
 		// To avoid upsetting the current displayed article after a refresh, we check to see if the first visible article is the same
 		// elsewhere we scroll to the previous article
 		allArticles = [articleController allArticles];
-		BOOL isUnchanged = [guid isEqualToString:[[allArticles objectAtIndex:[articleList visibleRange].location] guid]];
+		BOOL isUnchanged = [articleList visibleRange].location < [allArticles count]
+			&& [guid isEqualToString:[[allArticles objectAtIndex:[articleList visibleRange].location] guid]];
 		if (!isUnchanged)
 		{
 			if (![self scrollToArticle:guid])
@@ -813,7 +812,7 @@
 	}
 	else
 		currentSelectedRow = -1;
-	if ((refreshFlag == MA_Refresh_ReapplyFilter || refreshFlag == MA_Refresh_ReloadFromDatabase) && (currentSelectedRow == -1) && ([[NSApp mainWindow] firstResponder] == articleList))
+	if ((currentSelectedRow == -1) && ([[NSApp mainWindow] firstResponder] == articleList))
 		[[NSApp mainWindow] makeFirstResponder:[foldersTree mainView]];
 	else if (refreshFlag == MA_Refresh_SortAndRedraw)
 		blockSelectionHandler = blockMarkRead = NO;
@@ -842,15 +841,15 @@
  */
 -(void)selectFolderWithFilter:(int)newFolderId
 {
-	currentSelectedRow = -1;
-	[rowHeightArray removeAllObjects];
-	[articleController reloadArrayOfArticles];
-	[articleController sortArticles];
-	[articleList reloadData];
-	if (guidOfArticleToSelect == nil)
-		[articleList scrollRowToVisible:0];
-	else
-		[self selectArticleAfterReload];
+	@autoreleasepool {
+		currentSelectedRow = -1;
+		[rowHeightArray removeAllObjects];
+		[articleList reloadData];
+		if (guidOfArticleToSelect == nil)
+			[articleList scrollRowToVisible:0];
+		else
+			[self selectArticleAfterReload];
+	}
 }
 
 /* handleRefreshArticle
@@ -858,30 +857,6 @@
  */
 -(void)handleRefreshArticle:(NSNotification *)nc
 {
-}
-
-/* clearCurrentURL
- * Clears the current URL.
- */
--(void)clearCurrentURL
-{
-	// If we already have an URL release it.
-	if (currentURL)
-	{
-		[currentURL release];
-		currentURL = nil;
-	}
-}
-
-/* url
- * Return the URL of current article.
- */
--(NSURL *)url
-{
-	if (isCurrentPageFullHTML)
-		return currentURL;
-	else
-		return nil;
 }
 
 /* refreshArticlePane
@@ -897,7 +872,7 @@
 -(void)markCurrentRead:(NSTimer *)aTimer
 {
 	NSArray * allArticles = [articleController allArticles];
-	if (currentSelectedRow >=0 && currentSelectedRow < (int)[allArticles count] && ![[Database sharedDatabase] readOnly])
+	if (currentSelectedRow >=0 && currentSelectedRow < (int)[allArticles count] && ![[Database sharedManager] readOnly])
 	{
 		Article * theArticle = [allArticles objectAtIndex:currentSelectedRow];
 		if (![theArticle isRead])
@@ -922,9 +897,11 @@
 	CGFloat height;
 	if (row >= [rowHeightArray count])
 	{
-		// 150 seems a reasonable value to avoid calculating too many frames before being able to update display
-		[rowHeightArray addObject:[NSNumber numberWithFloat:150]];
-		return 150.;
+		NSInteger toAdd = row - [rowHeightArray count] + 1 ;
+		for (NSInteger i = 0 ; i < toAdd ; i++) {
+			[rowHeightArray addObject:[NSNumber numberWithFloat:DEFAULT_CELL_HEIGHT]];
+		}
+		return (CGFloat)DEFAULT_CELL_HEIGHT;
 	}
 	else
 	{
@@ -939,17 +916,13 @@
  */
 - (PXListViewCell*)listView:(PXListView*)aListView cellForRow:(NSUInteger)row
 {
-	BOOL newCell = NO;
 	if (![aListView isEqualTo:articleList])
 		return nil;
 	NSArray * allArticles = [articleController allArticles];
-	NSUInteger count = [allArticles count];
-	if (row >= count)
-		return nil;
 
 	Article * theArticle = [allArticles objectAtIndex:row];
 	NSInteger articleFolderId = [theArticle folderId];
-	Folder * folder = [[Database sharedDatabase] folderFromID:articleFolderId];
+	Folder * folder = [[Database sharedManager] folderFromID:articleFolderId];
 	NSString * feedURL = SafeString([folder feedURL]);
 
 	ArticleCellView *cellView = (ArticleCellView*)[aListView dequeueCellWithReusableIdentifier:LISTVIEW_CELL_IDENTIFIER];
@@ -957,20 +930,15 @@
 	if (cellView == nil)
 	{
 		cellView = [[[ArticleCellView alloc] initWithReusableIdentifier:LISTVIEW_CELL_IDENTIFIER
-						inFrame:NSMakeRect(XPOS_IN_CELL, YPOS_IN_CELL, aListView.bounds.size.width - XPOS_IN_CELL, [self listView:aListView heightOfRow:row])] autorelease];
-		newCell = YES;
+						inFrame:NSMakeRect(XPOS_IN_CELL, YPOS_IN_CELL, aListView.bounds.size.width - XPOS_IN_CELL, DEFAULT_CELL_HEIGHT)] autorelease];
 	}
 
 	ArticleView * view = [cellView articleView];
-	if (row < count)
-	{
-		NSString * htmlText = [view articleTextFromArray:[NSArray arrayWithObject:theArticle]];
-		[cellView setFolderId:articleFolderId];
-		[view setHTML:htmlText withBase:feedURL];
-	}
-	else
-		[cellView setInProgress:NO];
-
+	[cellView setFolderId:articleFolderId];
+	[cellView setArticleRow:row];
+	NSString * htmlText = [view articleTextFromArray:[NSArray arrayWithObject:theArticle]];
+	[cellView setInProgress:YES];
+	[view setHTML:htmlText withBase:feedURL];
 	[cellView addSubview:view];
     return cellView;
 }
@@ -998,7 +966,7 @@
 	NSMutableArray * arrayOfTitles = [[NSMutableArray alloc] init];
 	NSMutableString * fullHTMLText = [[NSMutableString alloc] init];
 	NSMutableString * fullPlainText = [[NSMutableString alloc] init];
-	Database * db = [Database sharedDatabase];
+	Database * db = [Database sharedManager];
 	int count = [rowIndexes count];
 
 	// Set up the pasteboard
@@ -1022,7 +990,7 @@
 		[arrayOfURLs addObject:msgLink];
 		[arrayOfTitles addObject:msgTitle];
 
-		NSMutableDictionary * articleDict = [[NSMutableDictionary alloc] init];
+		NSMutableDictionary * articleDict = [NSMutableDictionary dictionary];
 		[articleDict setValue:msgTitle forKey:@"rssItemTitle"];
 		[articleDict setValue:msgLink forKey:@"rssItemLink"];
 		[articleDict setValue:msgText forKey:@"rssItemDescription"];
@@ -1030,7 +998,6 @@
 		[articleDict setValue:[folder homePage] forKey:@"sourceHomeURL"];
 		[articleDict setValue:[folder feedURL] forKey:@"sourceRSSURL"];
 		[arrayOfArticles addObject:articleDict];
-		[articleDict release];
 
 		// Plain text
 		[fullPlainText appendFormat:@"%@\n%@\n\n", msgTitle, msgText];
